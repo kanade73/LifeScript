@@ -194,8 +194,9 @@ git add (ファイル名)
 git commit -m (何かしらのコメント)
 これが変更を保存するやつ（ローカルに）
 
-git push
+git push origin (ファイル名)
 これをしてようやくGitHubのサイトに反映される
+originが何かは気にしなくて良い
 
 git branch
 今いるブランチと今あるブランチがわかる
@@ -206,4 +207,5 @@ git checkout -b (ブランチ名)
 git checkout (ブランチ名)
 このブランチ名のブランチに移動する
 
-git add .
+git fetch
+git rebase
