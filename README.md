@@ -187,3 +187,23 @@ uv run pytest         # tests
 ## License
 
 MIT © 2026 kanade
+
+git add (ファイル名)
+ステージング
+
+git commit -m (何かしらのコメント)
+これが変更を保存するやつ（ローカルに）
+
+git push
+これをしてようやくGitHubのサイトに反映される
+
+git branch
+今いるブランチと今あるブランチがわかる
+
+git checkout -b (ブランチ名)
+新しいブランチを作ってここに移動する(-b)
+
+git checkout (ブランチ名)
+このブランチ名のブランチに移動する
+
+git add .
