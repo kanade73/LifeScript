@@ -15,8 +15,4 @@ def log(rule_title: str, message: str, level: str = "INFO") -> None:
 
 
 def drain() -> list[str]:
-    """Return and clear all pending log entries."""
-    with _lock:
-        entries = list(_queue)
-        _queue.clear()
-        return entries
+    return "mikan"
