@@ -6,7 +6,13 @@ CREATE TABLE IF NOT EXISTS rules (
     title           TEXT    NOT NULL,
     lifescript_code TEXT    NOT NULL,
     compiled_python TEXT    NOT NULL,
+    trigger_type    TEXT    NOT NULL DEFAULT 'interval',
     trigger_seconds INTEGER NOT NULL DEFAULT 60,
+    cron_minute     TEXT    DEFAULT NULL,
+    cron_hour       TEXT    DEFAULT NULL,
+    cron_day_of_week TEXT   DEFAULT NULL,
+    cron_day        TEXT    DEFAULT NULL,
+    cron_month      TEXT    DEFAULT NULL,
     status          TEXT    NOT NULL DEFAULT 'active',
     created_at      TEXT    NOT NULL
 );

@@ -80,7 +80,7 @@ class SettingsDialog:
                                 height=28,
                                 bgcolor=COLORS["green"],
                                 border_radius=8,
-                                alignment=ft.alignment.center,
+                                alignment=ft.Alignment(0, 0),
                             ),
                             ft.Text(
                                 "LINE Messaging API",
@@ -135,7 +135,7 @@ class SettingsDialog:
                                 height=28,
                                 bgcolor=COLORS["purple"],
                                 border_radius=8,
-                                alignment=ft.alignment.center,
+                                alignment=ft.Alignment(0, 0),
                             ),
                             ft.Text(
                                 "LLM (via LiteLLM)",
@@ -181,7 +181,7 @@ class SettingsDialog:
                         height=32,
                         bgcolor=COLORS["yellow"],
                         border_radius=10,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                     ),
                     ft.Text(
                         "Settings",

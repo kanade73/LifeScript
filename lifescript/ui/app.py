@@ -138,7 +138,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                         height=40,
                         bgcolor=BLUE,
                         border_radius=12,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                     ),
                     ft.Container(height=16),
                     *nav_buttons,

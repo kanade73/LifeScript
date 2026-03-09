@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 def main() -> None:
     load_dotenv()
 
+    # Plugin auto-discovery (must happen before compiler/validator/runner use plugins)
+    from .plugins import discover
+
+    discover()
+
     from .compiler.compiler import Compiler
     from .database.client import db_client
     from .plugins.line_plugin import line_plugin

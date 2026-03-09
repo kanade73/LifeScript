@@ -131,7 +131,7 @@ class DashboardView:
                         height=40,
                         bgcolor=accent,
                         border_radius=12,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                     ),
                     ft.Column(
                         [

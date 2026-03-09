@@ -139,7 +139,7 @@ class EditorView:
             content=ft.Row(
                 [
                     ft.ElevatedButton(
-                        text="Compile & Save",
+                        "Compile & Save",
                         icon=ft.Icons.AUTO_FIX_HIGH_ROUNDED,
                         bgcolor=COLORS["yellow"],
                         color=COLORS["dark_text"],
@@ -151,7 +151,7 @@ class EditorView:
                         on_click=self._on_compile,
                     ),
                     ft.ElevatedButton(
-                        text="Run All",
+                        "Run All",
                         icon=ft.Icons.PLAY_ARROW_ROUNDED,
                         bgcolor=COLORS["green"],
                         color=COLORS["card_bg"],
@@ -163,7 +163,7 @@ class EditorView:
                         on_click=self._on_run_all,
                     ),
                     ft.OutlinedButton(
-                        text="Stop All",
+                        "Stop All",
                         icon=ft.Icons.STOP_ROUNDED,
                         style=ft.ButtonStyle(
                             shape=ft.RoundedRectangleBorder(radius=12),
@@ -367,24 +367,40 @@ class EditorView:
         if not code:
             self._log_warn("Editor is empty.")
             return
-        self._log_cyan("Compiling…")
+        self._log_cyan("コンパイル中…")
         try:
             result = self._compiler.compile(code)
         except CompileError as e:
-            self._log_error(f"Compile error: {e}")
+            self._log_error(f"コンパイルエラー: {e}")
             return
         try:
+            trigger = result["trigger"]
+            trigger_type = trigger.get("type", "interval")
+
+            cron_fields = None
+            trigger_seconds = 60
+            if trigger_type == "cron":
+                cron_fields = {
+                    k: trigger.get(k)
+                    for k in ("minute", "hour", "day_of_week", "day", "month")
+                    if trigger.get(k) is not None
+                }
+            else:
+                trigger_seconds = int(trigger["seconds"])
+
             rule = db_client.save_rule(
                 title=result["title"],
                 lifescript_code=code,
                 compiled_python=result["code"],
-                trigger_seconds=int(result["trigger"]["seconds"]),
+                trigger_seconds=trigger_seconds,
+                trigger_type=trigger_type,
+                cron_fields=cron_fields,
             )
             self._scheduler.add_rule(rule)
-            self._log_info(f'Compiled & saved: "{result["title"]}"')
+            self._log_info(f'コンパイル完了: "{result["title"]}"')
             self._load_rules_list()
         except Exception as e:
-            self._log_error(f"Save error: {e}")
+            self._log_error(f"保存エラー: {e}")
 
     def _on_run_all(self, e) -> None:
         if not self._scheduler.is_running:
