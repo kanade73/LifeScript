@@ -1,29 +1,28 @@
--- LifeScript Database Schema
--- Run this in the Supabase SQL Editor before first use.
+-- LifeScript Database Schema (SQLite)
+-- Auto-applied on first launch at ~/.lifescript/lifescript.db
 
 CREATE TABLE IF NOT EXISTS rules (
-  id            UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
-  title         TEXT         NOT NULL,
-  lifescript_code TEXT       NOT NULL,
-  compiled_python TEXT       NOT NULL,
-  trigger_seconds INTEGER    NOT NULL DEFAULT 60,
-  status        TEXT         NOT NULL DEFAULT 'active'
-                             CHECK (status IN ('active', 'paused', 'deleted')),
-  created_at    TIMESTAMPTZ  DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS logs (
-  id            UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
-  rule_id       UUID         REFERENCES rules(id) ON DELETE CASCADE,
-  executed_at   TIMESTAMPTZ  DEFAULT NOW(),
-  result        TEXT         NOT NULL CHECK (result IN ('success', 'error')),
-  error_message TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT    NOT NULL,
+    lifescript_code TEXT    NOT NULL,
+    compiled_python TEXT    NOT NULL,
+    trigger_seconds INTEGER NOT NULL DEFAULT 60,
+    status          TEXT    NOT NULL DEFAULT 'active',
+    created_at      TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS connections (
-  id            UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
-  service_name  TEXT         NOT NULL UNIQUE,
-  access_token  TEXT         NOT NULL,
-  refresh_token TEXT         DEFAULT '',
-  connected_at  TIMESTAMPTZ  DEFAULT NOW()
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_name  TEXT    NOT NULL UNIQUE,
+    access_token  TEXT    NOT NULL,
+    refresh_token TEXT    NOT NULL DEFAULT '',
+    connected_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS execution_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id    TEXT    NOT NULL,
+    status     TEXT    NOT NULL,
+    message    TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL
 );

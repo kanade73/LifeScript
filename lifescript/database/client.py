@@ -1,41 +1,76 @@
-"""Database client with Supabase backend and in-memory fallback."""
+"""SQLite database client - auto-created at ~/.lifescript/lifescript.db"""
+
 from __future__ import annotations
 
-import uuid
+import sqlite3
+import threading
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from supabase import Client
+_DB_DIR = Path.home() / ".lifescript"
+_DB_PATH = _DB_DIR / "lifescript.db"
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS rules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT    NOT NULL,
+    lifescript_code TEXT    NOT NULL,
+    compiled_python TEXT    NOT NULL,
+    trigger_seconds INTEGER NOT NULL DEFAULT 60,
+    status          TEXT    NOT NULL DEFAULT 'active',
+    created_at      TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS connections (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_name  TEXT    NOT NULL UNIQUE,
+    access_token  TEXT    NOT NULL,
+    refresh_token TEXT    NOT NULL DEFAULT '',
+    connected_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS execution_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id    TEXT    NOT NULL,
+    status     TEXT    NOT NULL,
+    message    TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL
+);
+"""
 
 
 class DatabaseClient:
     def __init__(self) -> None:
-        self._client: Client | None = None
-        # In-memory fallback (used when Supabase is not configured)
-        self._rules: list[dict] = []
-        self._logs: list[dict] = []
-        self._connections: list[dict] = []
-        self._id_counter = 1
+        self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
-    # Connection management
+    # Connection
     # ------------------------------------------------------------------
-    def connect(self, url: str, key: str) -> None:
-        from supabase import create_client
-        self._client = create_client(url, key)
+    def connect(self) -> None:
+        _DB_DIR.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(
+            str(_DB_PATH),
+            check_same_thread=False,
+        )
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.executescript(_SCHEMA)
+        self._conn.commit()
 
     @property
     def is_connected(self) -> bool:
-        return self._client is not None
+        return self._conn is not None
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _new_id(self) -> str:
-        id_ = str(self._id_counter)
-        self._id_counter += 1
-        return id_
+    def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute(sql, params)
+            self._conn.commit()
+            return cur
 
     # ------------------------------------------------------------------
     # Rules
@@ -47,135 +82,83 @@ class DatabaseClient:
         compiled_python: str,
         trigger_seconds: int = 60,
     ) -> dict:
-        if self._client:
-            result = self._client.table("rules").insert({
-                "title": title,
-                "lifescript_code": lifescript_code,
-                "compiled_python": compiled_python,
-                "trigger_seconds": trigger_seconds,
-                "status": "active",
-            }).execute()
-            if not result.data:
-                raise RuntimeError("Supabase insert returned no data")
-            return result.data[0]
-
-        rule = {
-            "id": self._new_id(),
-            "title": title,
-            "lifescript_code": lifescript_code,
-            "compiled_python": compiled_python,
-            "trigger_seconds": trigger_seconds,
-            "status": "active",
-            "created_at": self._now(),
-        }
-        self._rules.append(rule)
-        return rule
+        cur = self._execute(
+            """
+            INSERT INTO rules (title, lifescript_code, compiled_python, trigger_seconds, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (title, lifescript_code, compiled_python, trigger_seconds, self._now()),
+        )
+        return self._get_rule_by_id(cur.lastrowid)
 
     def get_rules(self) -> list[dict]:
-        if self._client:
-            result = self._client.table("rules").select("*").eq("status", "active").execute()
-            return result.data
-        return [r for r in self._rules if r["status"] == "active"]
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute("SELECT * FROM rules WHERE status = 'active' ORDER BY id")
+            return [dict(row) for row in cur.fetchall()]
 
     def update_rule_python(self, rule_id: str, compiled_python: str) -> None:
-        if self._client:
-            self._client.table("rules").update(
-                {"compiled_python": compiled_python}
-            ).eq("id", rule_id).execute()
-            return
-        for r in self._rules:
-            if str(r["id"]) == str(rule_id):
-                r["compiled_python"] = compiled_python
-                break
+        self._execute(
+            "UPDATE rules SET compiled_python = ? WHERE id = ?",
+            (compiled_python, str(rule_id)),
+        )
 
     def delete_rule(self, rule_id: str) -> None:
-        if self._client:
-            self._client.table("rules").update(
-                {"status": "deleted"}
-            ).eq("id", rule_id).execute()
-            return
-        for r in self._rules:
-            if str(r["id"]) == str(rule_id):
-                r["status"] = "deleted"
-                break
+        self._execute(
+            "UPDATE rules SET status = 'deleted' WHERE id = ?",
+            (str(rule_id),),
+        )
+
+    def _get_rule_by_id(self, rule_id: int | None) -> dict:
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError(f"Rule {rule_id} not found after insert")
+            return dict(row)
 
     # ------------------------------------------------------------------
-    # Logs
-    # ------------------------------------------------------------------
-    def save_log(
-        self, rule_id: str, result: str, error_message: str | None = None
-    ) -> None:
-        if self._client:
-            self._client.table("logs").insert({
-                "rule_id": rule_id,
-                "result": result,
-                "error_message": error_message,
-            }).execute()
-            return
-        self._logs.append({
-            "id": str(uuid.uuid4()),
-            "rule_id": rule_id,
-            "executed_at": self._now(),
-            "result": result,
-            "error_message": error_message,
-        })
-
-    # ------------------------------------------------------------------
-    # Connections
+    # Connections (LINE credentials etc.)
     # ------------------------------------------------------------------
     def get_connection(self, service_name: str) -> dict | None:
-        if self._client:
-            result = (
-                self._client.table("connections")
-                .select("*")
-                .eq("service_name", service_name)
-                .execute()
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute(
+                "SELECT * FROM connections WHERE service_name = ?", (service_name,)
             )
-            return result.data[0] if result.data else None
-        for c in self._connections:
-            if c["service_name"] == service_name:
-                return c
-        return None
+            row = cur.fetchone()
+            return dict(row) if row else None
 
     def save_connection(
         self, service_name: str, access_token: str, refresh_token: str = ""
     ) -> None:
-        if self._client:
-            existing = self.get_connection(service_name)
-            if existing:
-                self._client.table("connections").update({
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                }).eq("service_name", service_name).execute()
-            else:
-                self._client.table("connections").insert({
-                    "service_name": service_name,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                }).execute()
-            return
-        for c in self._connections:
-            if c["service_name"] == service_name:
-                c["access_token"] = access_token
-                c["refresh_token"] = refresh_token
-                return
-        self._connections.append({
-            "id": str(uuid.uuid4()),
-            "service_name": service_name,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "connected_at": self._now(),
-        })
+        self._execute(
+            """
+            INSERT INTO connections (service_name, access_token, refresh_token, connected_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(service_name) DO UPDATE SET
+                access_token  = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                connected_at  = excluded.connected_at
+            """,
+            (service_name, access_token, refresh_token, self._now()),
+        )
 
     def delete_connection(self, service_name: str) -> None:
-        if self._client:
-            self._client.table("connections").delete().eq(
-                "service_name", service_name
-            ).execute()
-            return
-        self._connections = [
-            c for c in self._connections if c["service_name"] != service_name
-        ]
+        self._execute("DELETE FROM connections WHERE service_name = ?", (service_name,))
+
+    # ------------------------------------------------------------------
+    # Execution logs
+    # ------------------------------------------------------------------
+    def save_log(self, rule_id: str, status: str, message: str = "") -> None:
+        self._execute(
+            """
+            INSERT INTO execution_logs (rule_id, status, message, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (str(rule_id), status, message, self._now()),
+        )
 
 
 # Application-wide singleton

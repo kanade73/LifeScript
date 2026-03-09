@@ -1,4 +1,5 @@
 """RestrictedPython sandbox for executing LLM-generated code safely."""
+
 from RestrictedPython import compile_restricted, safe_globals, safe_builtins, PrintCollector
 from RestrictedPython.Guards import guarded_iter_unpack_sequence
 
@@ -9,21 +10,23 @@ from ..plugins.line_plugin import notify_line
 
 def _build_globals() -> dict:
     restricted_builtins = dict(safe_builtins)
-    restricted_builtins.update({
-        # Plugin functions (the only external calls allowed)
-        "fetch_time_now": fetch_time_now,
-        "fetch_time_today": fetch_time_today,
-        "notify_line": notify_line,
-        # Safe built-ins
-        "str": str,
-        "int": int,
-        "float": float,
-        "bool": bool,
-        "len": len,
-        "range": range,
-        "list": list,
-        "dict": dict,
-    })
+    restricted_builtins.update(
+        {
+            # Plugin functions (the only external calls allowed)
+            "fetch_time_now": fetch_time_now,
+            "fetch_time_today": fetch_time_today,
+            "notify_line": notify_line,
+            # Safe built-ins
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "len": len,
+            "range": range,
+            "list": list,
+            "dict": dict,
+        }
+    )
     globs = dict(safe_globals)
     globs["__builtins__"] = restricted_builtins
     globs["_getiter_"] = iter

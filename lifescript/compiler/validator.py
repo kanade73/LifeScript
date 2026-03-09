@@ -1,4 +1,5 @@
 """Static analysis: ensure generated Python only calls whitelisted functions."""
+
 import ast
 from ..exceptions import ValidationError
 
@@ -22,13 +23,16 @@ class _Visitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         if isinstance(node.func, ast.Name):
             if node.func.id not in ALLOWED_CALLS and node.func.id not in {
-                "str", "int", "float", "bool", "len", "range",
+                "str",
+                "int",
+                "float",
+                "bool",
+                "len",
+                "range",
             }:
                 self.errors.append(f"function call not allowed: {node.func.id}()")
         elif isinstance(node.func, ast.Attribute):
-            self.errors.append(
-                f"attribute call not allowed: {ast.unparse(node.func)}()"
-            )
+            self.errors.append(f"attribute call not allowed: {ast.unparse(node.func)}()")
         self.generic_visit(node)
 
     def visit_Global(self, node: ast.Global) -> None:

@@ -1,4 +1,5 @@
 """Thread-safe log queue for communication between the scheduler and the UI."""
+
 from collections import deque
 from datetime import datetime
 import threading

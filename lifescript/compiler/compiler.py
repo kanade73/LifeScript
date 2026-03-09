@@ -1,4 +1,5 @@
 """LifeScript → Python compiler via LLM (LiteLLM)."""
+
 from __future__ import annotations
 
 import json
@@ -78,16 +79,16 @@ class Compiler:
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
-            raise CompileError(
-                f"LLM returned invalid JSON: {e}\nContent: {content[:300]}"
-            ) from e
+            raise CompileError(f"LLM returned invalid JSON: {e}\nContent: {content[:300]}") from e
 
     def compile(self, lifescript_code: str) -> dict[str, Any]:
         """Compile LifeScript to Python. Returns dict with title, trigger, code."""
-        content = self._call_llm([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Compile this LifeScript:\n\n{lifescript_code}"},
-        ])
+        content = self._call_llm(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Compile this LifeScript:\n\n{lifescript_code}"},
+            ]
+        )
         result = self._parse_response(content)
 
         if "error" in result:
@@ -115,18 +116,20 @@ class Compiler:
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
         """Ask the LLM to fix a runtime error in previously generated Python."""
-        content = self._call_llm([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"This LifeScript:\n\n{lifescript_code}\n\n"
-                    f"Was compiled to:\n\n{python_code}\n\n"
-                    f"But caused this error at runtime:\n\n{error}\n\n"
-                    "Please return a corrected compilation."
-                ),
-            },
-        ])
+        content = self._call_llm(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"This LifeScript:\n\n{lifescript_code}\n\n"
+                        f"Was compiled to:\n\n{python_code}\n\n"
+                        f"But caused this error at runtime:\n\n{error}\n\n"
+                        "Please return a corrected compilation."
+                    ),
+                },
+            ]
+        )
         result = self._parse_response(content)
 
         if "error" in result:

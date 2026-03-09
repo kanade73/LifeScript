@@ -1,4 +1,5 @@
 """APScheduler-based job manager for LifeScript rules."""
+
 from __future__ import annotations
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -90,9 +91,7 @@ class LifeScriptScheduler:
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def _run_rule(
-        self, rule_id: str, title: str, python_code: str, lifescript_code: str
-    ) -> None:
+    def _run_rule(self, rule_id: str, title: str, python_code: str, lifescript_code: str) -> None:
         try:
             run_sandboxed(python_code)
             log_queue.log(title, "OK")
@@ -115,9 +114,7 @@ class LifeScriptScheduler:
             return
         try:
             log_queue.log(title, "Attempting LLM re-compilation…", "WARN")
-            result = self._compiler.recompile_with_error(
-                lifescript_code, old_python, error
-            )
+            result = self._compiler.recompile_with_error(lifescript_code, old_python, error)
             new_python = result["code"]
             db_client.update_rule_python(rule_id, new_python)
 

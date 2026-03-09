@@ -5,13 +5,11 @@ description = "暮らしにコードを書け - A DSL that compiles human intent
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "textual>=0.50.0",
+    "flet>=0.24.0",
     "litellm>=1.30.0",
     "apscheduler>=3.10.4",
     "RestrictedPython>=7.1",
-    "supabase>=2.3.0",
     "python-dotenv>=1.0.0",
-    "httpx>=0.26.0",
 ]
 
 [project.scripts]
