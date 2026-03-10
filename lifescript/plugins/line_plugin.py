@@ -1,4 +1,7 @@
+"""LINE Messaging API plugin - sends push messages."""
+
 import httpx
+
 from .base import Plugin
 from ..exceptions import ServiceNotConnectedError
 
@@ -53,3 +56,14 @@ line_plugin = LinePlugin()
 # Function exposed to the sandbox
 def notify_line(message: str) -> None:
     line_plugin.notify(message)
+
+
+# Auto-discovery registration
+PLUGIN_EXPORTS = [
+    {
+        "name": "notify_line",
+        "func": notify_line,
+        "signature": "notify_line(message: str) -> None",
+        "description": "接続済みのLINEユーザーにメッセージを送信する",
+    },
+]

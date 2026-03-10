@@ -1,4 +1,7 @@
+"""Time plugin - provides current time and date information."""
+
 from datetime import datetime
+
 from .base import Plugin
 
 
@@ -34,3 +37,20 @@ def fetch_time_now() -> str:
 
 def fetch_time_today() -> dict:
     return _plugin.fetch_today()
+
+
+# Auto-discovery registration
+PLUGIN_EXPORTS = [
+    {
+        "name": "fetch_time_now",
+        "func": fetch_time_now,
+        "signature": "fetch_time_now() -> str",
+        "description": '現在時刻を "HH:MM" 形式で返す',
+    },
+    {
+        "name": "fetch_time_today",
+        "func": fetch_time_today,
+        "signature": 'fetch_time_today() -> dict  ({"weekday": "Monday", "date": "2024-01-01"})',
+        "description": "今日の曜日と日付を辞書で返す",
+    },
+]

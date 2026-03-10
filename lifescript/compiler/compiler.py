@@ -1,6 +1,8 @@
 """LifeScript → Python compiler via LLM (LiteLLM)."""
+
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -8,49 +10,65 @@ from typing import Any
 import litellm
 
 from ..exceptions import CompileError
+from ..plugins import get_descriptions
 from .validator import validate_python
 
-SYSTEM_PROMPT = """\
-You are a LifeScript-to-Python compiler.
+_SYSTEM_PROMPT_TEMPLATE = """\
+あなたは LifeScript → Python コンパイラです。
 
-LifeScript is a DSL for life automation. Compile the given LifeScript into Python \
-that uses ONLY the functions listed below. Output JSON and nothing else.
+LifeScript は「暮らしの自動化」のためのホワイトリスト方式 DSL です。
+与えられた LifeScript を、以下に列挙された関数 **のみ** を使った Python に変換してください。
+出力は JSON のみ。マークダウンや説明文は不要です。
 
-## AVAILABLE FUNCTIONS
-- fetch_time_now()          → str  current time as "HH:MM"
-- fetch_time_today()        → dict {"weekday": "Monday", "date": "2024-01-01"}
-- notify_line(message: str) → None  sends LINE message to the connected user
+## 使用可能な関数
+{functions_section}
 
-## LIFESCRIPT → PYTHON TRANSLATION
-| LifeScript                     | Python                        |
-|--------------------------------|-------------------------------|
-| fetch(time.now)                | fetch_time_now()              |
-| fetch(time.today)              | fetch_time_today()            |
-| notify(LINE, "msg")            | notify_line("msg")            |
-| let x = expr                   | x = expr                      |
-| when cond { ... }              | if cond: ...                  |
-| repeat N { ... }               | for _ in range(N): ...        |
-| every day { ... }              | trigger=interval(seconds=60)  |
-| every Nh { ... }               | trigger=interval(seconds=N*3600) |
-| every Nm { ... }               | trigger=interval(seconds=N*60) |
+## LifeScript → Python 変換ルール
+| LifeScript                     | Python                           |
+|--------------------------------|----------------------------------|
+| fetch(time.now)                | fetch_time_now()                 |
+| fetch(time.today)              | fetch_time_today()               |
+| log("msg")                     | log("msg")                       |
+| let x = expr                   | x = expr                         |
+| when cond {{ ... }}            | if cond: ...                     |
+| if cond {{ ... }} else {{ }}   | if cond: ... else: ...           |
+| repeat N {{ ... }}             | for _ in range(N): ...           |
+| every day {{ ... }}            | trigger=interval(seconds=86400)  |
+| every Nh {{ ... }}             | trigger=interval(seconds=N*3600) |
+| every Nm {{ ... }}             | trigger=interval(seconds=N*60)   |
 
-## RULES
-- No import statements
-- No file system access
-- No network calls (use plugin functions only)
-- No exec, eval, __import__, open, os, sys
-- Only the plugin functions above may be called
+## 禁止事項
+- import 文の使用禁止
+- ファイルシステムへのアクセス禁止
+- ネットワーク呼び出し禁止（プラグイン関数のみ使用可）
+- exec, eval, __import__, open, os, sys の使用禁止
+- 上記のプラグイン関数以外の関数呼び出し禁止
 
-## OUTPUT FORMAT (JSON only – no markdown, no explanation)
-{
-  "title": "brief human-readable description (Japanese OK)",
-  "trigger": {"type": "interval", "seconds": <integer>},
-  "code": "<Python body as a plain string, no function def>"
-}
+## 出力形式（JSON のみ — マークダウン不可、説明文不可）
 
-If the LifeScript is invalid or uses unsupported features:
-{"error": "<explanation>"}
+{{"title": "簡潔な日本語説明", "trigger": {{"type": "interval", "seconds": <整数>}}, "code": "<Python コード文字列>"}}
+
+LifeScript が無効、またはサポート外の機能を使用している場合:
+{{"error": "<日本語の説明>"}}
 """
+
+# Compile cache: hash(lifescript_code) → result dict
+_cache: dict[str, dict] = {}
+_MAX_CACHE = 128
+
+
+def _build_system_prompt() -> str:
+    """Build the system prompt dynamically from registered plugins."""
+    descs = get_descriptions()
+    lines = []
+    for name, info in descs.items():
+        lines.append(f"- {info['signature']}  — {info['description']}")
+    functions_section = "\n".join(lines) if lines else "（プラグインが登録されていません）"
+    return _SYSTEM_PROMPT_TEMPLATE.format(functions_section=functions_section)
+
+
+def _cache_key(code: str) -> str:
+    return hashlib.sha256(code.strip().encode()).hexdigest()
 
 
 class Compiler:
@@ -70,81 +88,90 @@ class Compiler:
             response = litellm.completion(**kwargs)
             return response.choices[0].message.content.strip()
         except Exception as e:
-            raise CompileError(f"LLM call failed: {e}") from e
+            raise CompileError(f"LLM呼び出しに失敗しました: {e}") from e
 
     def _parse_response(self, content: str) -> dict:
-        # Strip markdown code fences if present
         content = re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("`").strip()
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
-            raise CompileError(
-                f"LLM returned invalid JSON: {e}\nContent: {content[:300]}"
-            ) from e
+            raise CompileError(f"LLMが無効なJSONを返しました: {e}\n内容: {content[:300]}") from e
 
-    def compile(self, lifescript_code: str) -> dict[str, Any]:
-        """Compile LifeScript to Python. Returns dict with title, trigger, code."""
-        content = self._call_llm([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Compile this LifeScript:\n\n{lifescript_code}"},
-        ])
-        result = self._parse_response(content)
-
+    def _validate_result(self, result: dict) -> dict:
+        """Validate and normalize a compilation result dict."""
         if "error" in result:
             raise CompileError(result["error"])
 
         for field in ("title", "trigger", "code"):
             if field not in result:
-                raise CompileError(f"LLM response missing field: '{field}'")
+                raise CompileError(f"LLMの応答に必須フィールドがありません: '{field}'")
 
-        # Validate trigger structure
         trigger = result["trigger"]
         if not isinstance(trigger, dict):
-            raise CompileError(f"trigger must be a dict, got {type(trigger).__name__}")
+            raise CompileError(
+                f"triggerは辞書型である必要があります（{type(trigger).__name__}が返されました）"
+            )
+
         if "seconds" not in trigger:
-            raise CompileError("trigger must contain 'seconds' key")
+            raise CompileError("triggerには 'seconds' が必要です")
         try:
             result["trigger"]["seconds"] = int(trigger["seconds"])
         except (TypeError, ValueError) as e:
-            raise CompileError(f"trigger['seconds'] must be a number: {e}") from e
+            raise CompileError(f"trigger['seconds']は数値である必要があります: {e}") from e
 
         validate_python(result["code"])
+        return result
+
+    def compile(self, lifescript_code: str) -> dict[str, Any]:
+        """Compile LifeScript to Python. Returns dict with title, trigger, code."""
+        key = _cache_key(lifescript_code)
+        if key in _cache:
+            return _cache[key]
+
+        content = self._call_llm(
+            [
+                {"role": "system", "content": _build_system_prompt()},
+                {
+                    "role": "user",
+                    "content": f"以下の LifeScript をコンパイルしてください:\n\n{lifescript_code}",
+                },
+            ]
+        )
+        result = self._validate_result(self._parse_response(content))
+
+        # Store in cache (evict oldest if full)
+        if len(_cache) >= _MAX_CACHE:
+            oldest = next(iter(_cache))
+            del _cache[oldest]
+        _cache[key] = result
+
         return result
 
     def recompile_with_error(
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
         """Ask the LLM to fix a runtime error in previously generated Python."""
-        content = self._call_llm([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"This LifeScript:\n\n{lifescript_code}\n\n"
-                    f"Was compiled to:\n\n{python_code}\n\n"
-                    f"But caused this error at runtime:\n\n{error}\n\n"
-                    "Please return a corrected compilation."
-                ),
-            },
-        ])
-        result = self._parse_response(content)
+        # Invalidate cache for this code
+        key = _cache_key(lifescript_code)
+        _cache.pop(key, None)
 
-        if "error" in result:
-            raise CompileError(result["error"])
+        content = self._call_llm(
+            [
+                {"role": "system", "content": _build_system_prompt()},
+                {
+                    "role": "user",
+                    "content": (
+                        f"以下の LifeScript:\n\n{lifescript_code}\n\n"
+                        f"は次の Python にコンパイルされました:\n\n{python_code}\n\n"
+                        f"しかし実行時に以下のエラーが発生しました:\n\n{error}\n\n"
+                        "修正したコンパイル結果を返してください。"
+                    ),
+                },
+            ]
+        )
+        return self._validate_result(self._parse_response(content))
 
-        for field in ("title", "trigger", "code"):
-            if field not in result:
-                raise CompileError(f"LLM response missing field: '{field}'")
-
-        trigger = result["trigger"]
-        if not isinstance(trigger, dict):
-            raise CompileError(f"trigger must be a dict, got {type(trigger).__name__}")
-        if "seconds" not in trigger:
-            raise CompileError("trigger must contain 'seconds' key")
-        try:
-            result["trigger"]["seconds"] = int(trigger["seconds"])
-        except (TypeError, ValueError) as e:
-            raise CompileError(f"trigger['seconds'] must be a number: {e}") from e
-
-        validate_python(result["code"])
-        return result
+    @staticmethod
+    def clear_cache() -> None:
+        """Clear the compile cache."""
+        _cache.clear()
