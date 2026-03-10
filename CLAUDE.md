@@ -1,83 +1,302 @@
-# CLAUDE.md
+# LifeScript 仕様書 v4
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 1. プロダクト概要
 
-## Commands
+### コンセプト
+**「暮らしにコードを書け」**
 
-```bash
-uv sync                   # install all dependencies
-uv sync --group dev       # install with dev dependencies
-uv run lifescript         # start the app
-uv run python -m lifescript  # equivalent
+LifeScriptは、自然言語とPythonの中間に位置する独自のDSL（ドメイン固有言語）です。
+PCでLifeScriptを記述し、LLMがPythonにコンパイルして実行。結果をiPhoneアプリでダッシュボードとして確認する。PCとスマホの両方を使って暮らしを支配するという体験が本プロダクトの核心です。
 
-uv run ruff check .       # lint
-uv run ruff format .      # format
-uv run pytest             # run tests
+```
+自然言語（意図） → LifeScript（記述） → Python（実行） → Supabase → iPhoneダッシュボード
 ```
 
-## Architecture
+### ターゲットユーザー
+- **エンジニア向け**: コードを直接記述して高度なオートメーションを組む
+- **初心者向け**: キーワードボタンでブロック的にLifeScriptを組み立てる
 
-LifeScript is a desktop GUI app (Flet) that compiles a custom DSL into Python automation.
+### デバイス役割分担
+| デバイス | 役割 |
+|----------|------|
+| PC | LifeScriptの記述・コンパイル・ルール管理 |
+| iPhone | 実行ログ確認・ルール一覧・ON/OFFの切り替え |
 
-**Flow:**
+### 差別化ポイント
+- **IFTTTとの違い**: IFTTTは「どのサービスを繋ぐか」を人間が知っている必要がある。LifeScriptは「何をしたいか」だけ書けばLLMが実装を考える
+- **単なる自動化との違い**: コンパイラ方式による実行の確実性 + 意図の保持
+- **セキュリティ設計**: ホワイトリスト方式の言語仕様 + サンドボックス実行による堅牢性
+- **体験の設計**: PCで書いてスマホで受け取るという「暮らしを征服する」体験
+
+---
+
+## 2. 言語仕様
+
+### 2.1 設計思想
+- **ホワイトリスト方式**: 使えるキーワードを限定することで意図しない挙動を構造的に排除する
+- **コード寄り**: 自由度を下げて実行の確実性を上げる
+- **多言語対応**: LLMを介するため英語・日本語どちらでも記述可能
+- **コンパイル方式**: 記述時に一度だけLLMを呼び出してPythonに変換・保存する
+
+### 2.2 キーワード一覧
+
+#### トリガー系
+| キーワード | 説明 | 例 |
+|------------|------|----|
+| `when` | 条件が満たされたときに発火 | `when fetch(time.now) == "08:00"` |
+| `every` | 定期実行 | `every 1h` / `every day` |
+
+#### データ取得系
+| キーワード | 説明 | 例 |
+|------------|------|----|
+| `fetch(time.now)` | 現在時刻を取得 | `"08:00"` 形式で返す |
+| `fetch(time.today)` | 今日の曜日・日付を取得 | `"Monday"` / `"2024-01-01"` 形式 |
+
+#### 制御系
+| キーワード | 説明 |
+|------------|------|
+| `if` / `else` | 条件分岐 |
+| `and` / `or` / `not` | 論理演算子 |
+| `==` / `!=` / `<` / `>` / `<=` / `>=` | 比較演算子 |
+
+#### アクション系
+| キーワード | 説明 | 例 |
+|------------|------|----|
+| `log("msg")` | 実行ログをSupabaseに記録する | `log("おはようございます")` |
+
+#### 変数系
+| キーワード | 説明 | 例 |
+|------------|------|----|
+| `let` | 変数定義 | `let x = fetch(time.now)` |
+
+#### 繰り返し系
+| キーワード | 説明 | 例 |
+|------------|------|----|
+| `repeat` | n回繰り返し | `repeat 3 { ... }` |
+
+### 2.3 構文例
+
+```javascript
+// 例1: 毎朝8時にログ
+every day {
+  when fetch(time.now) == "08:00" {
+    log("おはようございます")
+  }
+}
+
+// 例2: 変数を使った条件分岐
+let now = fetch(time.now)
+if now >= "09:00" and now <= "18:00" {
+  log("勤務時間内です")
+}
+
+// 例3: 定期実行
+every 1h {
+  log("1時間が経過しました")
+}
+
+// 例4: 繰り返し
+repeat 3 {
+  log("ping")
+}
 ```
-LifeScript code (user input)
-  → Compiler (LiteLLM → LLM, cached) → Python code
-  → Validator (AST whitelist, auto-discovered from plugins)
-  → SQLite (rule storage)
-  → APScheduler (interval + cron triggers)
-  → RestrictedPython sandbox (timeout + rate limit)
-  → Plugins (auto-discovered: time, line, weather)
-  → LINE Messaging API / wttr.in
+
+### 2.4 コンパイルエラーの定義
+以下の場合にコンパイルエラーとして扱う:
+- ホワイトリスト外のキーワードの使用
+- ブロックの未閉じ（`{` に対応する `}` がない）
+- `fetch` の引数が未定義のもの
+- `log` の引数が文字列でない場合
+
+---
+
+## 3. アーキテクチャ
+
+### 3.1 全体フロー
+
+```
+[PC: Flet デスクトップアプリ]
+  ↓ LifeScriptを記述
+[バックエンド: コンパイラモジュール]
+  ↓ システムプロンプト + LifeScriptをLLMに送信
+[LLM（コンパイラとして動作）]
+  ↓ Pythonコードを生成
+[バックエンド: 静的解析 + バリデーション]
+  ↓ 生成されたPythonをSupabaseに保存
+[APScheduler: スケジューラ]
+  ↓ 定期実行
+[RestrictedPython: サンドボックス実行]
+  ↓ プラグイン経由でSupabaseにログ書き込み
+[Supabase: 共有DB]
+  ↓ リアルタイム同期
+[iPhone: SwiftUIダッシュボード]
 ```
 
-**LLM is called only at compile time and on runtime errors.**
+### 3.2 エラーハンドリングフロー
 
-### Key modules
+```
+[サンドボックス実行]
+  ↓ エラー発生
+[エラーキャッチャー]
+  ↓ エラー内容 + 元のLifeScript + 生成済みPythonをLLMに送信
+[LLM（デバッガとして動作）]
+  ↓ 修正済みPythonを生成
+[静的解析 + バリデーション]
+  ↓ Pythonを上書き保存
+[APScheduler: 再実行]
+```
 
-| Module | Responsibility |
-|---|---|
-| `compiler/compiler.py` | LLM compilation with dynamic system prompt, compile cache, Japanese errors |
-| `compiler/validator.py` | AST whitelist auto-populated from plugin registry; blocks dangerous builtins |
-| `sandbox/runner.py` | RestrictedPython with timeout (30s) and per-rule rate limiting (60/min) |
-| `scheduler/scheduler.py` | APScheduler with interval + cron triggers; pause/resume per rule |
-| `database/client.py` | SQLite client with cron fields, rule status toggle, execution logs |
-| `plugins/__init__.py` | Auto-discovery: scans plugin modules for `PLUGIN_EXPORTS` at startup |
-| `plugins/time_plugin.py` | `fetch_time_now()`, `fetch_time_today()` |
-| `plugins/line_plugin.py` | `notify_line(msg)` — requires LINE credentials |
-| `plugins/weather_plugin.py` | `fetch_weather(city)` — uses wttr.in (no API key) |
-| `ui/app.py` | Flet app entry; Miro-inspired layout with activity bar + content area + status bar |
-| `ui/main_screen.py` | `EditorView` — code editor (dark), rules sidebar, action toolbar, log panel |
-| `ui/dashboard_view.py` | `DashboardView` — status cards, rule cards grid, live log panel |
-| `ui/settings_screen.py` | LINE / LLM config dialog; persists to `.env` via `python-dotenv` |
-| `log_queue.py` | Thread-safe deque; scheduler writes logs, Flet UI polls with `threading.Timer(1.0)` |
+**LLMを呼ぶのはコンパイル時とエラー時のみ** → トークンコストを最小化
 
-### Startup sequence (`__main__.py`)
+### 3.3 プラグインアーキテクチャ（Loca流用）
+各機能をプラグインとして独立実装する。
+新しいデータソース・アクション追加時はプラグインファイルを追加するだけで拡張可能。
 
-1. Load `.env`
-2. Auto-discover plugins (`plugins.discover()`)
-3. Connect to SQLite (auto-created at ~/.lifescript/lifescript.db)
-4. Load LINE credentials from `connections` table
-4. Create `Compiler(model, api_base)`
-5. Create and `start()` `LifeScriptScheduler`; `load_from_db()`
-6. Run Flet app via `ft.app(target=create_app(...))`
+```
+plugins/
+  ├── time_plugin.py       # fetch(time.now) / fetch(time.today)
+  ├── log_plugin.py        # log(...) → Supabaseへ書き込み
+  ├── weather_plugin.py    # fetch(weather.today) ※将来
+  └── calendar_plugin.py  # fetch(calendar.next) ※将来
+```
 
-### Adding a plugin
+---
 
-1. Create `lifescript/plugins/my_plugin.py`.
-2. Define `PLUGIN_EXPORTS` list with `name`, `func`, `signature`, `description` for each function.
-3. That's it — auto-discovery registers everything at startup (validator, sandbox, compiler prompt).
+## 4. セキュリティ設計
 
-## Tech stack
+### 4.1 設計思想
+LLMが生成したPythonコードを`exec()`でそのまま実行するのは危険。
+悪意あるLifeScriptを書かれた場合にシステムへの任意コード実行を許してしまう。
+展示会での「壊しに来るユーザー」への対策としても必須。
 
-- **UI**: Flet (desktop GUI, Miro-inspired pop design)
-- **LLM client**: LiteLLM (model-agnostic; OpenAI or Ollama)
-- **Scheduler**: APScheduler 3.x BackgroundScheduler
-- **Sandbox**: RestrictedPython
-- **DB**: SQLite (~/.lifescript/lifescript.db)
-- **Notifications**: LINE Messaging API (push)
-- **Package manager**: uv
+### 4.2 二重のセーフティネット
 
-## Environment variables
+**第一層: 言語仕様レベル（入口）**
+- ホワイトリスト方式のキーワード制限
+- LifeScript記述時点で使える操作を限定する
 
-See `.env.example`. Key vars: `LITELLM_MODEL`, `LITELLM_API_BASE`, `OPENAI_API_KEY`.
+**第二層: 実行レベル（出口）**
+- `RestrictedPython` による生成コードのサンドボックス実行
+- プラグインのAPI呼び出し以外のコードが含まれていた場合は実行を拒否する
+- ファイルシステムへのアクセス・ネットワーク直接呼び出し・importを禁止する
+
+### 4.3 静的解析フロー
+```
+LLMがPythonを生成
+　↓
+静的解析（ホワイトリスト外の操作が含まれていないか検証）
+　↓ 検証NG
+実行拒否 + LifeScriptErrorを返す
+　↓ 検証OK
+RestrictedPython環境で実行
+```
+
+---
+
+## 5. コンポーネント詳細
+
+### 5.1 コンパイラモジュール（Python）
+- LifeScriptを受け取りLLMに投げてPythonを生成する
+- システムプロンプトに「LifeScriptの言語仕様」「使用可能なプラグインAPI」「出力フォーマット」を定義する
+- 生成されたPythonを静的解析・バリデーション後にSupabaseに保存する
+
+### 5.2 スケジューラ（APScheduler）
+- `every` キーワードを解析してジョブを登録する
+- `when` キーワードは条件チェックの定期ポーリングとして登録する
+- アプリ起動時にSupabaseから全ルールを読み込んでジョブを再登録する
+
+### 5.3 Flet デスクトップアプリ（PC）
+- PythonでそのままUIを記述できるためバックエンドとの統合がシームレス
+- コードエディタ風のテキスト入力エリア
+- コンパイルボタン・実行ボタン・停止ボタン
+- **初心者向けキーワードボタン群**: `when` / `every` / `if` / `log` / `fetch` などをボタンで呼び出してエディタに挿入する
+- 有効なルール一覧パネル
+- コンパイルエラー・実行ログ表示パネル
+
+### 5.4 SwiftUIダッシュボード（iPhone）
+- Supabaseからルール一覧・実行ログを取得して表示する
+- ルールのON/OFF切り替え（Supabaseの`status`カラムを更新）
+- 実行ログのタイムライン表示
+- **読み取りメイン、最小限の書き込みのみ**
+
+### 5.5 データベース（Supabase）
+| テーブル | カラム | 説明 |
+|----------|--------|------|
+| `rules` | id, title, lifescript_code, compiled_python, status, created_at | LifeScriptルールの保存 |
+| `logs` | id, rule_id, message, executed_at, result, error_message | 実行ログ |
+
+---
+
+## 6. MVPスコープ
+
+### フェーズ1（最優先・まず動くものを作る）
+- [ ] LifeScriptのコアキーワード全実装
+- [ ] LLMによるコンパイル（LifeScript → Python）
+- [ ] `fetch(time.now)` / `fetch(time.today)` の実装
+- [ ] `log()` の実装（Supabaseへの書き込み）
+- [ ] APSchedulerによるスケジューリング
+- [ ] Flet基本UI（エディタ + ログパネル）
+- [ ] Supabaseでのルール保存・読み込み
+
+### フェーズ2（堅牢にする）
+- [ ] RestrictedPythonによるサンドボックス実行
+- [ ] 静的解析によるホワイトリスト検証
+- [ ] エラー時のLLM再コンパイル
+
+### フェーズ3（展示会に向けて）
+- [ ] SwiftUIダッシュボードアプリ（iPhone）
+- [ ] 初心者向けキーワードボタン
+- [ ] UIの見た目のブラッシュアップ
+- [ ] デモ用サンプルLifeScript作成
+
+### 将来（ロードマップとして語る）
+- `fetch(weather.today)` / `fetch(calendar.next)` などのプラグイン追加
+- スマホからのデータ取得（歩数・位置情報・バッテリー）をLifeScriptの変数として使う
+- コミュニティによるプラグイン共有
+
+---
+
+## 7. 技術スタック
+
+### PC バックエンド
+- **言語**: Python
+- **LLMクライアント**: LiteLLM（モデル抽象化）
+- **開発初期モデル**: ローカルLLM（Qwen2.5-Coder）
+- **本番モデル**: GPT-4o mini → 動作確認後に決定
+- **スケジューラ**: APScheduler
+- **サンドボックス**: RestrictedPython
+- **DBクライアント**: supabase-py
+
+### PC フロントエンド
+- **UIフレームワーク**: Flet（PythonでFlutterライクなデスクトップアプリを構築）
+
+### iPhone アプリ
+- **言語**: Swift
+- **UIフレームワーク**: SwiftUI
+- **DBクライアント**: supabase-swift
+- **対応**: iOSのみ（開発者・デモともにiPhoneユーザーのため）
+
+### インフラ・外部サービス
+- **データベース**: Supabase（PostgreSQL）
+- **MCPプロトコル**: MCP Python SDK
+
+### 開発環境
+- **パッケージ管理**: uv
+- **OS**: macOS
+
+---
+
+## 8. チーム分担案
+
+| タスク | 担当 |
+|--------|------|
+| バックエンド全般・コンパイラ設計 | Kanade |
+| プラグインアーキテクチャ | Kanade |
+| APScheduler実装 | Kanade |
+| Supabase設計・接続 | Kanade |
+| セキュリティ設計（RestrictedPython・静的解析） | Kanade |
+| Flet UI骨格 | Kanade |
+| SwiftUI ダッシュボード骨格 | Kanade |
+| UIスタイリング・キーワードボタン | メンバー |
+| デモ用サンプルLifeScript作成 | メンバー |
+| プレゼン資料補助 | メンバー |

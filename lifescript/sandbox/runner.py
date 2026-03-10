@@ -88,6 +88,11 @@ def run_sandboxed(
     """Compile and execute Python code inside RestrictedPython with timeout."""
     _check_rate_limit(rule_id)
 
+    # Set rule context for log plugin
+    from ..plugins.log_plugin import _set_rule_context
+
+    _set_rule_context(rule_id)
+
     try:
         byte_code = compile_restricted(python_code, filename="<lifescript>", mode="exec")
     except SyntaxError as e:

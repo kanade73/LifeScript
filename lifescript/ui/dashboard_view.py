@@ -7,7 +7,6 @@ import threading
 import flet as ft
 
 from ..database.client import db_client
-from ..plugins.line_plugin import line_plugin
 from .app import COLORS
 
 
@@ -29,15 +28,15 @@ class DashboardView:
             value="0",
             accent=COLORS["yellow"],
         )
-        self._line_card = self._status_card(
-            icon=ft.Icons.CHAT_ROUNDED,
-            label="LINE",
+        self._db_card = self._status_card(
+            icon=ft.Icons.CLOUD_ROUNDED,
+            label="Database",
             value="—",
             accent=COLORS["blue"],
         )
 
         status_row = ft.Row(
-            [self._scheduler_card, self._rules_card, self._line_card],
+            [self._scheduler_card, self._rules_card, self._db_card],
             spacing=12,
         )
 
@@ -213,13 +212,21 @@ class DashboardView:
         except Exception:
             pass
 
-        # LINE
-        line_ok = line_plugin.check_connection()
-        val_col3 = self._line_card.content.controls[1]
+        # Database
+        val_col3 = self._db_card.content.controls[1]
+        if db_client.is_supabase:
+            db_label = "Supabase"
+            db_color = COLORS["green"]
+        elif db_client.is_connected:
+            db_label = "SQLite (local)"
+            db_color = COLORS["yellow"]
+        else:
+            db_label = "Not connected"
+            db_color = COLORS["light_text"]
         val_col3.controls[1] = ft.Text(
-            "Connected" if line_ok else "Not connected",
+            db_label,
             size=15,
-            color=COLORS["green"] if line_ok else COLORS["light_text"],
+            color=db_color,
             weight=ft.FontWeight.W_700,
         )
 

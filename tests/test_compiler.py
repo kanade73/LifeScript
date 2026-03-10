@@ -52,16 +52,6 @@ class TestCompilerValidation:
         validated = self.compiler._validate_result(result)
         assert validated["trigger"]["seconds"] == 60
 
-    def test_valid_cron_result(self):
-        result = {
-            "title": "cron rule",
-            "trigger": {"type": "cron", "minute": 0, "hour": 8},
-            "code": 'notify_line("good morning")',
-        }
-        validated = self.compiler._validate_result(result)
-        assert validated["trigger"]["type"] == "cron"
-        assert validated["trigger"]["hour"] == 8
-
     def test_error_in_result_raises(self):
         with pytest.raises(CompileError, match="invalid"):
             self.compiler._validate_result({"error": "invalid code"})
@@ -78,12 +68,6 @@ class TestCompilerValidation:
         with pytest.raises(CompileError, match="seconds"):
             self.compiler._validate_result(
                 {"title": "t", "trigger": {"type": "interval"}, "code": "x = 1"}
-            )
-
-    def test_cron_missing_hour_raises(self):
-        with pytest.raises(CompileError, match="hour"):
-            self.compiler._validate_result(
-                {"title": "t", "trigger": {"type": "cron", "minute": 0}, "code": "x = 1"}
             )
 
     def test_disallowed_code_raises(self):
@@ -150,10 +134,8 @@ class TestSystemPrompt:
     def test_prompt_includes_plugin_functions(self):
         prompt = _build_system_prompt()
         assert "fetch_time_now" in prompt
-        assert "notify_line" in prompt
-        assert "fetch_weather" in prompt
+        assert "log" in prompt
 
     def test_prompt_includes_descriptions(self):
         prompt = _build_system_prompt()
         assert "現在時刻" in prompt
-        assert "LINE" in prompt

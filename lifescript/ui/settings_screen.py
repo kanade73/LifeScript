@@ -9,7 +9,6 @@ import flet as ft
 from dotenv import set_key
 
 from ..database.client import db_client
-from ..plugins.line_plugin import line_plugin
 from .app import COLORS
 
 ENV_FILE = ".env"
@@ -25,23 +24,26 @@ class SettingsDialog:
         self._compiler = compiler
         self._status = ft.Text("", size=12)
 
-        # ── LINE fields ─────────────────────────────────────────────
-        self._line_token = ft.TextField(
-            label="Channel Access Token",
-            password=True,
-            can_reveal_password=True,
+        # ── Supabase fields ──────────────────────────────────────────
+        self._supabase_url = ft.TextField(
+            value=os.getenv("SUPABASE_URL", ""),
+            label="Supabase URL",
+            hint_text="https://xxxxx.supabase.co",
             expand=True,
             border_radius=10,
             border_color="#E8E4DC",
             focused_border_color=COLORS["blue"],
         )
-        self._line_user_id = ft.TextField(
-            label="LINE User ID",
-            hint_text="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        self._supabase_key = ft.TextField(
+            value=os.getenv("SUPABASE_ANON_KEY", ""),
+            label="Anon Key",
+            hint_text="eyJhbGci...",
             expand=True,
             border_radius=10,
             border_color="#E8E4DC",
             focused_border_color=COLORS["blue"],
+            password=True,
+            can_reveal_password=True,
         )
 
         # ── LLM fields ─────────────────────────────────────────────
@@ -66,13 +68,13 @@ class SettingsDialog:
 
         content = ft.Column(
             [
-                # LINE section
+                # Supabase section
                 ft.Container(
                     content=ft.Row(
                         [
                             ft.Container(
                                 content=ft.Icon(
-                                    ft.Icons.CHAT_ROUNDED,
+                                    ft.Icons.CLOUD_ROUNDED,
                                     size=16,
                                     color=COLORS["card_bg"],
                                 ),
@@ -83,7 +85,7 @@ class SettingsDialog:
                                 alignment=ft.Alignment(0, 0),
                             ),
                             ft.Text(
-                                "LINE Messaging API",
+                                "Supabase",
                                 weight=ft.FontWeight.W_700,
                                 size=14,
                                 color=COLORS["dark_text"],
@@ -92,12 +94,12 @@ class SettingsDialog:
                         spacing=8,
                     ),
                 ),
-                self._line_token,
-                self._line_user_id,
+                self._supabase_url,
+                self._supabase_key,
                 ft.Row(
                     [
                         ft.ElevatedButton(
-                            "Connect",
+                            "Save & Connect",
                             icon=ft.Icons.LINK_ROUNDED,
                             bgcolor=COLORS["green"],
                             color=COLORS["card_bg"],
@@ -105,17 +107,7 @@ class SettingsDialog:
                                 shape=ft.RoundedRectangleBorder(radius=10),
                                 elevation=0,
                             ),
-                            on_click=self._connect_line,
-                        ),
-                        ft.OutlinedButton(
-                            "Disconnect",
-                            icon=ft.Icons.LINK_OFF_ROUNDED,
-                            style=ft.ButtonStyle(
-                                shape=ft.RoundedRectangleBorder(radius=10),
-                                side=ft.BorderSide(1, COLORS["coral"]),
-                                color=COLORS["coral"],
-                            ),
-                            on_click=self._disconnect_line,
+                            on_click=self._save_supabase,
                         ),
                     ],
                     spacing=8,
@@ -205,7 +197,7 @@ class SettingsDialog:
         )
 
     def show(self) -> None:
-        self._refresh_line_status()
+        self._refresh_supabase_status()
         self._page.overlay.append(self._dlg)
         self._dlg.open = True
         self._page.update()
@@ -219,40 +211,39 @@ class SettingsDialog:
         self._status.color = color
         self._page.update()
 
-    def _refresh_line_status(self) -> None:
-        connected = line_plugin.check_connection()
-        if connected:
-            self._set_status("LINE: connected", COLORS["green"])
+    def _refresh_supabase_status(self) -> None:
+        if db_client.is_supabase:
+            self._set_status("Supabase: connected", COLORS["green"])
+        elif db_client.is_connected:
+            self._set_status("Database: SQLite (fallback)", COLORS["yellow"])
         else:
-            self._set_status("LINE: not connected", COLORS["coral"])
+            self._set_status("Database: not connected", COLORS["coral"])
 
     # ------------------------------------------------------------------
-    # LINE
+    # Supabase
     # ------------------------------------------------------------------
-    def _connect_line(self, e) -> None:
-        token = self._line_token.value.strip()
-        user_id = self._line_user_id.value.strip()
-        threading.Thread(target=self._do_connect_line, args=(token, user_id), daemon=True).start()
+    def _save_supabase(self, e) -> None:
+        url = self._supabase_url.value.strip()
+        key = self._supabase_key.value.strip()
+        threading.Thread(target=self._do_save_supabase, args=(url, key), daemon=True).start()
 
-    def _do_connect_line(self, token: str, user_id: str) -> None:
-        if not token or not user_id:
-            self._set_status("Token and User ID are required.", COLORS["coral"])
+    def _do_save_supabase(self, url: str, key: str) -> None:
+        if not url or not key:
+            self._set_status("URLとAnon Keyの両方を入力してください。", COLORS["coral"])
             return
         try:
-            line_plugin.set_credentials(channel_token=token, user_id=user_id)
-            db_client.save_connection("LINE", access_token=token, refresh_token=user_id)
-            self._set_status("LINE connected!", COLORS["green"])
-        except Exception as ex:
-            self._set_status(f"LINE error: {ex}", COLORS["coral"])
-
-    def _disconnect_line(self, e) -> None:
-        threading.Thread(target=self._do_disconnect_line, daemon=True).start()
-
-    def _do_disconnect_line(self) -> None:
-        try:
-            line_plugin.clear_credentials()
-            db_client.delete_connection("LINE")
-            self._set_status("LINE disconnected.", COLORS["yellow"])
+            set_key(_env_path(), "SUPABASE_URL", url)
+            set_key(_env_path(), "SUPABASE_ANON_KEY", key)
+            os.environ["SUPABASE_URL"] = url
+            os.environ["SUPABASE_ANON_KEY"] = key
+            # Reconnect with new credentials
+            db_client.connect()
+            if db_client.is_supabase:
+                self._set_status("Supabase connected!", COLORS["green"])
+            else:
+                self._set_status(
+                    "接続に失敗しました。URLとKeyを確認してください。", COLORS["coral"]
+                )
         except Exception as ex:
             self._set_status(f"Error: {ex}", COLORS["coral"])
 

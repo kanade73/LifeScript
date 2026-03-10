@@ -4,12 +4,11 @@ from lifescript.plugins import get_functions, get_descriptions, get_allowed_name
 
 
 class TestPluginDiscovery:
-    def test_all_functions_registered(self):
+    def test_core_functions_registered(self):
         funcs = get_functions()
         assert "fetch_time_now" in funcs
         assert "fetch_time_today" in funcs
-        assert "notify_line" in funcs
-        assert "fetch_weather" in funcs
+        assert "log" in funcs
 
     def test_functions_are_callable(self):
         for name, func in get_functions().items():

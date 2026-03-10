@@ -171,11 +171,12 @@ class LifeScriptScheduler:
         try:
             run_sandboxed(python_code, rule_id=rule_id)
             log_queue.log(title, "OK")
-            db_client.save_log(rule_id, "success")
         except SandboxError as e:
             error_msg = str(e)
             log_queue.log(title, f"エラー: {error_msg}", "ERROR")
-            db_client.save_log(rule_id, "error", error_msg)
+            db_client.save_log(
+                rule_id=rule_id, message=title, result="error", error_message=error_msg
+            )
             self._try_recompile(rule_id, title, lifescript_code, python_code, error_msg)
 
     def _try_recompile(

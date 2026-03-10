@@ -12,10 +12,10 @@ from ..exceptions import CompileError
 from .app import COLORS
 
 _DEFAULT_CODE = """\
-// 例: 毎朝8時にLINE通知
+// 例: 毎朝8時にログ記録
 every day {
   when fetch(time.now) == "08:00" {
-    notify(LINE, "おはようございます")
+    log("おはようございます")
   }
 }
 """
@@ -375,26 +375,13 @@ class EditorView:
             return
         try:
             trigger = result["trigger"]
-            trigger_type = trigger.get("type", "interval")
-
-            cron_fields = None
-            trigger_seconds = 60
-            if trigger_type == "cron":
-                cron_fields = {
-                    k: trigger.get(k)
-                    for k in ("minute", "hour", "day_of_week", "day", "month")
-                    if trigger.get(k) is not None
-                }
-            else:
-                trigger_seconds = int(trigger["seconds"])
+            trigger_seconds = int(trigger.get("seconds", 60))
 
             rule = db_client.save_rule(
                 title=result["title"],
                 lifescript_code=code,
                 compiled_python=result["code"],
                 trigger_seconds=trigger_seconds,
-                trigger_type=trigger_type,
-                cron_fields=cron_fields,
             )
             self._scheduler.add_rule(rule)
             self._log_info(f'コンパイル完了: "{result["title"]}"')

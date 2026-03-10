@@ -10,7 +10,7 @@ class TestValidateAllowed:
     """Allowed code should pass validation."""
 
     def test_plugin_function_calls(self):
-        validate_python('notify_line("hello")')
+        validate_python('notify_discord("hello")')
         validate_python("t = fetch_time_now()")
         validate_python("d = fetch_time_today()")
         validate_python('w = fetch_weather("Tokyo")')
@@ -22,7 +22,7 @@ class TestValidateAllowed:
         validate_python("x = list(range(10))")
 
     def test_simple_logic(self):
-        validate_python('if fetch_time_now() == "08:00":\n    notify_line("hi")')
+        validate_python('if fetch_time_now() == "08:00":\n    notify_discord("hi")')
         validate_python("for _ in range(3):\n    pass")
         validate_python("x = 1 + 2")
 

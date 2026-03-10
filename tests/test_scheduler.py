@@ -16,7 +16,6 @@ def db(tmp_path):
     """Create a temporary database for testing."""
     db_path = tmp_path / "test.db"
     client = DatabaseClient()
-    # Monkeypatch the module-level constants
     with (
         patch("lifescript.database.client._DB_DIR", tmp_path),
         patch("lifescript.database.client._DB_PATH", db_path),
@@ -102,19 +101,6 @@ class TestSchedulerRules:
         scheduler.load_from_db()
         assert len(scheduler.get_active_ids()) == 2
 
-    def test_cron_trigger_rule(self, scheduler, db):
-        scheduler.start()
-        rule = db.save_rule(
-            title="cron_test",
-            lifescript_code='cron "0 8 * * *" { }',
-            compiled_python="x = 1",
-            trigger_seconds=60,
-            trigger_type="cron",
-            cron_fields={"minute": 0, "hour": 8},
-        )
-        scheduler.add_rule(rule)
-        assert str(rule["id"]) in scheduler.get_active_ids()
-
 
 class TestSchedulerPauseResume:
     def test_pause_rule(self, scheduler, db):
@@ -167,4 +153,4 @@ class TestSchedulerExecution:
             scheduler._run_rule("1", "test_rule", "x = 1/0", "every 1m { }")
             logs = db.get_logs("1")
             assert len(logs) == 1
-            assert logs[0]["status"] == "error"
+            assert logs[0]["result"] == "error"

@@ -61,18 +61,21 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         page.window.min_height = 600
         page.padding = 0
 
+        from .home_view import HomeView  # noqa: PLC0415
         from .main_screen import EditorView  # noqa: PLC0415
         from .dashboard_view import DashboardView  # noqa: PLC0415
         from .settings_screen import SettingsDialog  # noqa: PLC0415
 
+        home_view = HomeView(page=page, scheduler=scheduler)
         editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
         dashboard_view = DashboardView(page=page, scheduler=scheduler)
 
-        active_view: list = [editor_view]
+        views = [home_view, editor_view, dashboard_view]
+        active_view: list = [home_view]
 
         # ── Content area ────────────────────────────────────────────
         content_area = ft.Container(
-            content=editor_view.build(),
+            content=home_view.build(),
             expand=True,
             bgcolor=BG,
             padding=ft.padding.only(top=8, left=8, right=8, bottom=0),
@@ -81,13 +84,8 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
         # ── Activity bar (left icon strip — Miro style) ────────────
         def _on_nav(index: int) -> None:
-            if index == 0:
-                active_view[0] = editor_view
-                content_area.content = editor_view.build()
-            else:
-                active_view[0] = dashboard_view
-                content_area.content = dashboard_view.build()
-            # Update active indicator styling
+            active_view[0] = views[index]
+            content_area.content = views[index].build()
             for i, btn in enumerate(nav_buttons):
                 btn.style = ft.ButtonStyle(
                     bgcolor=YELLOW if i == index else ft.Colors.TRANSPARENT,
@@ -98,16 +96,28 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
         nav_buttons = [
             ft.IconButton(
-                icon=ft.Icons.EDIT_ROUNDED,
+                icon=ft.Icons.HOME_ROUNDED,
                 icon_color=DARK_TEXT,
                 icon_size=22,
-                tooltip="Editor",
+                tooltip="Home",
                 style=ft.ButtonStyle(
                     bgcolor=YELLOW,
                     shape=ft.RoundedRectangleBorder(radius=12),
                     padding=12,
                 ),
                 on_click=lambda e: _on_nav(0),
+            ),
+            ft.IconButton(
+                icon=ft.Icons.EDIT_ROUNDED,
+                icon_color=DARK_TEXT,
+                icon_size=22,
+                tooltip="Editor",
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.TRANSPARENT,
+                    shape=ft.RoundedRectangleBorder(radius=12),
+                    padding=12,
+                ),
+                on_click=lambda e: _on_nav(1),
             ),
             ft.IconButton(
                 icon=ft.Icons.DASHBOARD_ROUNDED,
@@ -119,7 +129,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                     shape=ft.RoundedRectangleBorder(radius=12),
                     padding=12,
                 ),
-                on_click=lambda e: _on_nav(1),
+                on_click=lambda e: _on_nav(2),
             ),
         ]
 
@@ -212,7 +222,12 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         def _poll() -> None:
             entries = log_queue.drain()
             if entries:
-                active_view[0].receive_logs(entries)
+                # Always send to Home (notifications)
+                home_view.receive_logs(entries)
+                # Also send to whichever view is currently active
+                current = active_view[0]
+                if current is not home_view and hasattr(current, "receive_logs"):
+                    current.receive_logs(entries)
                 # Update status bar scheduler indicator
                 running = scheduler.is_running
                 scheduler_badge.content.controls[0].color = GREEN if running else CORAL

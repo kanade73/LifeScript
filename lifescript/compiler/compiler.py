@@ -16,7 +16,7 @@ from .validator import validate_python
 _SYSTEM_PROMPT_TEMPLATE = """\
 あなたは LifeScript → Python コンパイラです。
 
-LifeScript は「暮らしの自動化」のための DSL です。
+LifeScript は「暮らしの自動化」のためのホワイトリスト方式 DSL です。
 与えられた LifeScript を、以下に列挙された関数 **のみ** を使った Python に変換してください。
 出力は JSON のみ。マークダウンや説明文は不要です。
 
@@ -24,20 +24,18 @@ LifeScript は「暮らしの自動化」のための DSL です。
 {functions_section}
 
 ## LifeScript → Python 変換ルール
-| LifeScript                     | Python                        |
-|--------------------------------|-------------------------------|
-| fetch(time.now)                | fetch_time_now()              |
-| fetch(time.today)              | fetch_time_today()            |
-| fetch(weather, "Tokyo")        | fetch_weather("Tokyo")        |
-| notify(LINE, "msg")            | notify_line("msg")            |
-| let x = expr                   | x = expr                      |
-| when cond {{ ... }}            | if cond: ...                  |
-| repeat N {{ ... }}             | for _ in range(N): ...        |
-| every day {{ ... }}            | trigger=interval(seconds=86400)|
+| LifeScript                     | Python                           |
+|--------------------------------|----------------------------------|
+| fetch(time.now)                | fetch_time_now()                 |
+| fetch(time.today)              | fetch_time_today()               |
+| log("msg")                     | log("msg")                       |
+| let x = expr                   | x = expr                         |
+| when cond {{ ... }}            | if cond: ...                     |
+| if cond {{ ... }} else {{ }}   | if cond: ... else: ...           |
+| repeat N {{ ... }}             | for _ in range(N): ...           |
+| every day {{ ... }}            | trigger=interval(seconds=86400)  |
 | every Nh {{ ... }}             | trigger=interval(seconds=N*3600) |
-| every Nm {{ ... }}             | trigger=interval(seconds=N*60) |
-| cron "0 8 * * *" {{ ... }}    | trigger=cron(minute=0,hour=8) |
-| cron "30 9 * * mon" {{ ... }} | trigger=cron(minute=30,hour=9,day_of_week="mon") |
+| every Nm {{ ... }}             | trigger=interval(seconds=N*60)   |
 
 ## 禁止事項
 - import 文の使用禁止
@@ -48,11 +46,7 @@ LifeScript は「暮らしの自動化」のための DSL です。
 
 ## 出力形式（JSON のみ — マークダウン不可、説明文不可）
 
-interval トリガーの場合:
-{{"title": "簡潔な説明", "trigger": {{"type": "interval", "seconds": <整数>}}, "code": "<Python コード文字列>"}}
-
-cron トリガーの場合:
-{{"title": "簡潔な説明", "trigger": {{"type": "cron", "minute": <int>, "hour": <int>, "day_of_week": "<str|省略可>", "day": "<str|省略可>", "month": "<str|省略可>"}}, "code": "<Python コード文字列>"}}
+{{"title": "簡潔な日本語説明", "trigger": {{"type": "interval", "seconds": <整数>}}, "code": "<Python コード文字列>"}}
 
 LifeScript が無効、またはサポート外の機能を使用している場合:
 {{"error": "<日本語の説明>"}}
@@ -118,26 +112,12 @@ class Compiler:
                 f"triggerは辞書型である必要があります（{type(trigger).__name__}が返されました）"
             )
 
-        trigger_type = trigger.get("type", "interval")
-        result["trigger"]["type"] = trigger_type
-
-        if trigger_type == "cron":
-            # Ensure at least minute and hour are present
-            for key in ("minute", "hour"):
-                if key not in trigger:
-                    raise CompileError(f"cronトリガーには '{key}' が必要です")
-                try:
-                    trigger[key] = int(trigger[key])
-                except (TypeError, ValueError) as e:
-                    raise CompileError(f"trigger['{key}']は数値である必要があります: {e}") from e
-        else:
-            # interval trigger
-            if "seconds" not in trigger:
-                raise CompileError("intervalトリガーには 'seconds' が必要です")
-            try:
-                result["trigger"]["seconds"] = int(trigger["seconds"])
-            except (TypeError, ValueError) as e:
-                raise CompileError(f"trigger['seconds']は数値である必要があります: {e}") from e
+        if "seconds" not in trigger:
+            raise CompileError("triggerには 'seconds' が必要です")
+        try:
+            result["trigger"]["seconds"] = int(trigger["seconds"])
+        except (TypeError, ValueError) as e:
+            raise CompileError(f"trigger['seconds']は数値である必要があります: {e}") from e
 
         validate_python(result["code"])
         return result
