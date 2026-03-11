@@ -165,16 +165,77 @@ class EditorView:
                         ),
                         on_click=self._on_run_all,
                     ),
-                    ft.OutlinedButton(
+                    ft.ElevatedButton(
                         "Stop All",
                         icon=ft.Icons.STOP_ROUNDED,
+                        bgcolor=COLORS["coral"],
+                        color=COLORS["card_bg"],
                         style=ft.ButtonStyle(
                             shape=ft.RoundedRectangleBorder(radius=12),
-                            side=ft.BorderSide(1.5, COLORS["coral"]),
-                            color=COLORS["coral"],
+                            elevation=0,
                             padding=ft.padding.symmetric(horizontal=20, vertical=12),
                         ),
                         on_click=self._on_stop_all,
+                    ),
+                    ft.OutlinedButton(
+                        "every",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["blue"]),
+                            color=COLORS["blue"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('every 1h {\n  \n}'),
+                    ),
+                    ft.OutlinedButton(
+                        "when",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["green"]),
+                            color=COLORS["green"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('when fetch(time.now) == "08:00" {\n \n}'),
+                    ),
+                    ft.OutlinedButton(
+                        "log",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["coral"]),
+                            color=COLORS["coral"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('log("Hello, world!")'),
+                    ),
+                    ft.OutlinedButton(
+                        "fetch",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["orange"]),
+                            color=COLORS["orange"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('fetch(time.now)'),
+                    ),
+                    ft.OutlinedButton(
+                        "if",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["brown"]),
+                            color=COLORS["brown"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('if 条件 {\n \n}'),
+                    ),
+                    ft.OutlinedButton(
+                        "let",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["purple"]),
+                            color=COLORS["purple"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e: self._insert_snippet('let x ='),
                     ),
                 ],
                 spacing=10,
@@ -237,6 +298,13 @@ class EditorView:
 
     def build(self) -> ft.Column:
         return self._content
+
+    def _insert_snippet(self, snippet: str) -> None:
+        current = self._editor.value or ""
+        if current and not current.endswith("\n"):
+            current += "\n"
+        self._editor.value = current + snippet
+        self._page.update()
 
     # ------------------------------------------------------------------
     # Log receiving (called by AppController)
