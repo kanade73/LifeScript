@@ -15,6 +15,7 @@ from ..database.client import db_client
 from ..scheduler.scheduler import LifeScriptScheduler
 from .. import log_queue
 
+#ボタンの実装のために色を追加定義
 # ── Miro-inspired colour palette ────────────────────────────────────
 BG = "#FAFAF8"
 SIDEBAR_BG = "#F0EDE6"
@@ -22,6 +23,8 @@ CARD_BG = "#FFFFFF"
 EDITOR_BG = "#2D2B27"
 EDITOR_FG = "#E8E4DC"
 YELLOW = "#FFD02F"
+ORANGE = "#FFA500"
+BROWN = "#DC8551"
 BLUE = "#4262FF"
 GREEN = "#00C875"
 CORAL = "#FF7575"
@@ -30,6 +33,7 @@ DARK_TEXT = "#2D2B27"
 MID_TEXT = "#6B6560"
 LIGHT_TEXT = "#A09A93"
 
+#色の名前？の定義も追加
 # Re-export for use by other modules
 COLORS = {
     "bg": BG,
@@ -42,6 +46,8 @@ COLORS = {
     "green": GREEN,
     "coral": CORAL,
     "purple": PURPLE,
+    "orange": ORANGE,
+    "brown": BROWN,
     "dark_text": DARK_TEXT,
     "mid_text": MID_TEXT,
     "light_text": LIGHT_TEXT,
