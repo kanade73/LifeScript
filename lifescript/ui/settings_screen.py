@@ -1,4 +1,4 @@
-"""Settings dialog - Miro-style pop design."""
+"""Settings dialog - Miro-style pop design (LLM settings only)."""
 
 from __future__ import annotations
 
@@ -24,28 +24,6 @@ class SettingsDialog:
         self._compiler = compiler
         self._status = ft.Text("", size=12)
 
-        # ── Supabase fields ──────────────────────────────────────────
-        self._supabase_url = ft.TextField(
-            value=os.getenv("SUPABASE_URL", ""),
-            label="Supabase URL",
-            hint_text="https://xxxxx.supabase.co",
-            expand=True,
-            border_radius=10,
-            border_color="#E8E4DC",
-            focused_border_color=COLORS["blue"],
-        )
-        self._supabase_key = ft.TextField(
-            value=os.getenv("SUPABASE_ANON_KEY", ""),
-            label="Anon Key",
-            hint_text="eyJhbGci...",
-            expand=True,
-            border_radius=10,
-            border_color="#E8E4DC",
-            focused_border_color=COLORS["blue"],
-            password=True,
-            can_reveal_password=True,
-        )
-
         # ── LLM fields ─────────────────────────────────────────────
         self._llm_model = ft.TextField(
             value=os.getenv("LITELLM_MODEL", "ollama/qwen2.5-coder:7b"),
@@ -68,7 +46,7 @@ class SettingsDialog:
 
         content = ft.Column(
             [
-                # Supabase section
+                # Database status (read-only)
                 ft.Container(
                     content=ft.Row(
                         [
@@ -85,7 +63,7 @@ class SettingsDialog:
                                 alignment=ft.Alignment(0, 0),
                             ),
                             ft.Text(
-                                "Supabase",
+                                "Database",
                                 weight=ft.FontWeight.W_700,
                                 size=14,
                                 color=COLORS["dark_text"],
@@ -94,24 +72,7 @@ class SettingsDialog:
                         spacing=8,
                     ),
                 ),
-                self._supabase_url,
-                self._supabase_key,
-                ft.Row(
-                    [
-                        ft.ElevatedButton(
-                            "Save & Connect",
-                            icon=ft.Icons.LINK_ROUNDED,
-                            bgcolor=COLORS["green"],
-                            color=COLORS["card_bg"],
-                            style=ft.ButtonStyle(
-                                shape=ft.RoundedRectangleBorder(radius=10),
-                                elevation=0,
-                            ),
-                            on_click=self._save_supabase,
-                        ),
-                    ],
-                    spacing=8,
-                ),
+                self._build_db_status(),
                 ft.Divider(color="#E8E4DC"),
                 # LLM section
                 ft.Container(
@@ -184,7 +145,7 @@ class SettingsDialog:
                 ],
                 spacing=10,
             ),
-            content=ft.Container(content=content, width=500, height=400),
+            content=ft.Container(content=content, width=500, height=350),
             actions=[
                 ft.TextButton(
                     "Close",
@@ -196,8 +157,32 @@ class SettingsDialog:
             shape=ft.RoundedRectangleBorder(radius=20),
         )
 
+    def _build_db_status(self) -> ft.Control:
+        """Build a read-only database status badge."""
+        if db_client.is_supabase:
+            label = "Supabase: connected"
+            color = COLORS["green"]
+            icon = ft.Icons.CHECK_CIRCLE_ROUNDED
+        elif db_client.is_connected:
+            label = "SQLite (fallback)"
+            color = COLORS["yellow"]
+            icon = ft.Icons.WARNING_ROUNDED
+        else:
+            label = "Not connected"
+            color = COLORS["coral"]
+            icon = ft.Icons.ERROR_ROUNDED
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(icon, size=16, color=color),
+                    ft.Text(label, size=13, color=color),
+                ],
+                spacing=6,
+            ),
+            padding=ft.padding.only(left=8),
+        )
+
     def show(self) -> None:
-        self._refresh_supabase_status()
         self._page.overlay.append(self._dlg)
         self._dlg.open = True
         self._page.update()
@@ -210,42 +195,6 @@ class SettingsDialog:
         self._status.value = msg
         self._status.color = color
         self._page.update()
-
-    def _refresh_supabase_status(self) -> None:
-        if db_client.is_supabase:
-            self._set_status("Supabase: connected", COLORS["green"])
-        elif db_client.is_connected:
-            self._set_status("Database: SQLite (fallback)", COLORS["yellow"])
-        else:
-            self._set_status("Database: not connected", COLORS["coral"])
-
-    # ------------------------------------------------------------------
-    # Supabase
-    # ------------------------------------------------------------------
-    def _save_supabase(self, e) -> None:
-        url = self._supabase_url.value.strip()
-        key = self._supabase_key.value.strip()
-        threading.Thread(target=self._do_save_supabase, args=(url, key), daemon=True).start()
-
-    def _do_save_supabase(self, url: str, key: str) -> None:
-        if not url or not key:
-            self._set_status("URLとAnon Keyの両方を入力してください。", COLORS["coral"])
-            return
-        try:
-            set_key(_env_path(), "SUPABASE_URL", url)
-            set_key(_env_path(), "SUPABASE_ANON_KEY", key)
-            os.environ["SUPABASE_URL"] = url
-            os.environ["SUPABASE_ANON_KEY"] = key
-            # Reconnect with new credentials
-            db_client.connect()
-            if db_client.is_supabase:
-                self._set_status("Supabase connected!", COLORS["green"])
-            else:
-                self._set_status(
-                    "接続に失敗しました。URLとKeyを確認してください。", COLORS["coral"]
-                )
-        except Exception as ex:
-            self._set_status(f"Error: {ex}", COLORS["coral"])
 
     # ------------------------------------------------------------------
     # LLM

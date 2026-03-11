@@ -7,6 +7,7 @@ import threading
 import flet as ft
 
 from ..compiler.compiler import Compiler
+from ..database.client import db_client
 from ..scheduler.scheduler import LifeScriptScheduler
 from .. import log_queue
 
@@ -66,6 +67,12 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         from .dashboard_view import DashboardView  # noqa: PLC0415
         from .settings_screen import SettingsDialog  # noqa: PLC0415
 
+        # ── DB connect (Supabase or SQLite fallback) ──────────────
+        db_client.connect()
+        if db_client.is_connected and not scheduler.is_running:
+            scheduler.start()
+            scheduler.load_from_db()
+
         home_view = HomeView(page=page, scheduler=scheduler)
         editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
         dashboard_view = DashboardView(page=page, scheduler=scheduler)
@@ -82,7 +89,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             border_radius=ft.border_radius.only(top_left=16),
         )
 
-        # ── Activity bar (left icon strip — Miro style) ────────────
+        # ── Activity bar navigation ─────────────────────────────────
         def _on_nav(index: int) -> None:
             active_view[0] = views[index]
             content_area.content = views[index].build()
@@ -133,6 +140,15 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             ),
         ]
 
+        # ── Dev mode badge ─────────────────────────────────────────
+        dev_badge = ft.IconButton(
+            icon=ft.Icons.DEVELOPER_MODE_ROUNDED,
+            icon_color=PURPLE,
+            icon_size=22,
+            tooltip="開発モード (認証スキップ中)",
+            style=ft.ButtonStyle(padding=8),
+        )
+
         activity_bar = ft.Container(
             content=ft.Column(
                 [
@@ -153,6 +169,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                     ft.Container(height=16),
                     *nav_buttons,
                     ft.Container(expand=True),
+                    dev_badge,
                     ft.IconButton(
                         icon=ft.Icons.SETTINGS_ROUNDED,
                         icon_color=MID_TEXT,
@@ -174,6 +191,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         )
 
         # ── Status bar (bottom) ─────────────────────────────────────
+        db_label = "Supabase" if db_client.is_supabase else "SQLite"
         scheduler_badge = ft.Container(
             content=ft.Row(
                 [
@@ -191,8 +209,18 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             content=ft.Row(
                 [
                     scheduler_badge,
+                    ft.Container(
+                        content=ft.Text(
+                            f"DB: {db_label}",
+                            size=11,
+                            color=MID_TEXT,
+                        ),
+                        bgcolor=CARD_BG,
+                        border_radius=10,
+                        padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                    ),
                     ft.Container(expand=True),
-                    ft.Text("LifeScript v0.1", size=11, color=LIGHT_TEXT),
+                    ft.Text("LifeScript v0.1 (dev)", size=11, color=LIGHT_TEXT),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -222,13 +250,10 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         def _poll() -> None:
             entries = log_queue.drain()
             if entries:
-                # Always send to Home (notifications)
                 home_view.receive_logs(entries)
-                # Also send to whichever view is currently active
                 current = active_view[0]
                 if current is not home_view and hasattr(current, "receive_logs"):
                     current.receive_logs(entries)
-                # Update status bar scheduler indicator
                 running = scheduler.is_running
                 scheduler_badge.content.controls[0].color = GREEN if running else CORAL
                 page.update()

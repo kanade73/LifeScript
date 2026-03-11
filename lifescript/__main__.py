@@ -16,24 +16,17 @@ def main() -> None:
     discover()
 
     from .compiler.compiler import Compiler
-    from .database.client import db_client
     from .scheduler.scheduler import LifeScriptScheduler
     import flet as ft
     from .ui.app import create_app
-
-    # --- Database (Supabase primary, SQLite fallback) ---
-    db_client.connect()
 
     # --- LLM compiler ---
     model = os.getenv("LITELLM_MODEL", "ollama/qwen2.5-coder:7b")
     api_base = os.getenv("LITELLM_API_BASE", "http://localhost:11434")
     compiler = Compiler(model=model, api_base=api_base)
 
-    # --- Scheduler ---
+    # --- Scheduler (DB connect + load is done after login in app.py) ---
     scheduler = LifeScriptScheduler(compiler=compiler)
-    scheduler.start()
-    if db_client.is_connected:
-        scheduler.load_from_db()
 
     # --- Run UI ---
     ft.run(create_app(compiler=compiler, scheduler=scheduler))
