@@ -1,4 +1,4 @@
-"""Settings dialog - Miro-style pop design (LLM settings only)."""
+"""設定ダイアログ — LLM モデルの設定を行う Miro 風ポップデザイン。"""
 
 from __future__ import annotations
 

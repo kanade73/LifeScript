@@ -1,4 +1,8 @@
-"""Static analysis: ensure generated Python only calls whitelisted functions."""
+"""静的解析 — 生成された Python がホワイトリスト内の関数のみを呼び出しているか検証する。
+
+LLM が生成したコードを実行前に AST レベルでチェックし、
+import / exec / open 等の危険な操作をブロックする（セキュリティ第一層）。
+"""
 
 import ast
 
@@ -76,7 +80,7 @@ class _Visitor(ast.NodeVisitor):
 
 
 def validate_python(code: str) -> None:
-    """Raise ValidationError if code uses disallowed constructs."""
+    """許可されていない構文が含まれていれば ValidationError を送出する。"""
     try:
         tree = ast.parse(code)
     except SyntaxError as e:

@@ -1,8 +1,9 @@
-"""Math plugin - provides random number generation."""
+"""数学プラグイン — ランダムな数値生成機能を提供する。"""
 
 from __future__ import annotations
 import random
 from .base import Plugin
+
 
 class MathPlugin(Plugin):
     @property

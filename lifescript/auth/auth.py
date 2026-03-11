@@ -1,7 +1,8 @@
-"""Supabase Auth client - email + password authentication.
+"""Supabase 認証クライアント — メール + パスワード認証。
 
-Uses SUPABASE_URL and SUPABASE_ANON_KEY from environment variables.
-Users only need to provide email + password to sign in.
+環境変数の SUPABASE_URL と SUPABASE_ANON_KEY を使用。
+ユーザーはメールアドレスとパスワードだけでログインできる。
+（現在は開発モードでバイパス中）
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any
 
 @dataclass
 class AuthSession:
-    """Lightweight representation of a Supabase auth session."""
+    """Supabase 認証セッションの軽量表現。"""
 
     access_token: str
     refresh_token: str
@@ -22,22 +23,20 @@ class AuthSession:
 
 
 class AuthClient:
-    """Wraps Supabase Auth for email + password authentication."""
+    """Supabase Auth をラップしたメール + パスワード認証クライアント。"""
 
     def __init__(self) -> None:
         self._client: Any = None
         self._session: AuthSession | None = None
 
     def _ensure_client(self) -> None:
-        """Lazily initialize the Supabase client from env vars."""
+        """環境変数から Supabase クライアントを遅延初期化する。"""
         if self._client is not None:
             return
         url = os.getenv("SUPABASE_URL", "")
         key = os.getenv("SUPABASE_ANON_KEY", "")
         if not url or not key:
-            raise RuntimeError(
-                "SUPABASE_URL と SUPABASE_ANON_KEY を .env に設定してください。"
-            )
+            raise RuntimeError("SUPABASE_URL と SUPABASE_ANON_KEY を .env に設定してください。")
         from supabase import create_client
 
         self._client = create_client(url, key)
@@ -51,7 +50,7 @@ class AuthClient:
         return self._session
 
     def sign_up(self, email: str, password: str) -> AuthSession:
-        """Register a new user and return a session."""
+        """新規ユーザーを登録し、セッションを返す。"""
         self._ensure_client()
         resp = self._client.auth.sign_up({"email": email, "password": password})
         if resp.user is None:
@@ -70,13 +69,13 @@ class AuthClient:
         return self._session
 
     def sign_in(self, email: str, password: str) -> AuthSession:
-        """Log in with email + password and return a session."""
+        """メール + パスワードでログインし、セッションを返す。"""
         self._ensure_client()
-        resp = self._client.auth.sign_in_with_password(
-            {"email": email, "password": password}
-        )
+        resp = self._client.auth.sign_in_with_password({"email": email, "password": password})
         if resp.user is None or resp.session is None:
-            raise RuntimeError("ログインに失敗しました。メールアドレスとパスワードを確認してください。")
+            raise RuntimeError(
+                "ログインに失敗しました。メールアドレスとパスワードを確認してください。"
+            )
         self._session = AuthSession(
             access_token=resp.session.access_token,
             refresh_token=resp.session.refresh_token,
@@ -86,7 +85,7 @@ class AuthClient:
         return self._session
 
     def sign_out(self) -> None:
-        """Sign out and clear the session."""
+        """ログアウトしてセッションを破棄する。"""
         if self._client is not None:
             try:
                 self._client.auth.sign_out()
@@ -95,7 +94,7 @@ class AuthClient:
         self._session = None
 
     def restore_session(self) -> bool:
-        """Try to restore an existing session. Returns True on success."""
+        """既存セッションの復元を試みる。成功時に True を返す。"""
         self._ensure_client()
         try:
             resp = self._client.auth.get_session()

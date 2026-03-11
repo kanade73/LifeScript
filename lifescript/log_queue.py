@@ -1,4 +1,8 @@
-"""Thread-safe log queue for communication between the scheduler and the UI."""
+"""スレッドセーフなログキュー — スケジューラと UI 間の通信に使用。
+
+バックグラウンドのスケジューラ/サンドボックスからログメッセージを受け取り、
+UI のポーリングループが定期的に drain() して画面に表示する。
+"""
 
 from collections import deque
 from datetime import datetime
@@ -16,7 +20,7 @@ def log(rule_title: str, message: str, level: str = "INFO") -> None:
 
 
 def drain() -> list[str]:
-    """Return and clear all pending log entries."""
+    """溜まっているログエントリを全て返してキューを空にする。"""
     with _lock:
         entries = list(_queue)
         _queue.clear()

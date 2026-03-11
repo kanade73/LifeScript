@@ -1,4 +1,4 @@
-"""LINE Messaging API plugin - sends push messages."""
+"""LINE Messaging API プラグイン — プッシュメッセージを送信する。"""
 
 import httpx
 

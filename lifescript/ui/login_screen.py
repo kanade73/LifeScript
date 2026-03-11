@@ -1,4 +1,4 @@
-"""Login screen - Miro-style pop design with email + password authentication."""
+"""ログイン画面 — メール + パスワード認証（現在は開発モードでバイパス中）。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ LIGHT_TEXT = "#A09A93"
 
 
 class LoginScreen:
-    """Full-screen login / sign-up view."""
+    """フルスクリーンのログイン / 新規登録画面。"""
 
     def __init__(self, page: ft.Page, on_login_success) -> None:
         self._page = page
@@ -54,7 +54,7 @@ class LoginScreen:
         self._loading = ft.ProgressRing(width=20, height=20, visible=False, color=BLUE)
 
     def build(self) -> ft.Control:
-        """Return the login screen as a Flet Control."""
+        """ログイン画面を Flet コントロールとして返す。"""
         return ft.Container(
             content=ft.Column(
                 [
@@ -158,9 +158,7 @@ class LoginScreen:
             return
         self._set_loading(True)
         self._set_status("")
-        threading.Thread(
-            target=self._sign_in_bg, args=(email, password), daemon=True
-        ).start()
+        threading.Thread(target=self._sign_in_bg, args=(email, password), daemon=True).start()
 
     def _sign_in_bg(self, email: str, password: str) -> None:
         try:
@@ -183,9 +181,7 @@ class LoginScreen:
             return
         self._set_loading(True)
         self._set_status("")
-        threading.Thread(
-            target=self._sign_up_bg, args=(email, password), daemon=True
-        ).start()
+        threading.Thread(target=self._sign_up_bg, args=(email, password), daemon=True).start()
 
     def _sign_up_bg(self, email: str, password: str) -> None:
         try:

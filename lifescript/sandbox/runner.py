@@ -1,4 +1,8 @@
-"""RestrictedPython sandbox for executing LLM-generated code safely."""
+"""RestrictedPython サンドボックス — LLM 生成コードを安全に実行する。
+
+セキュリティ第二層: RestrictedPython でコードをコンパイルし、
+スレッドベースのタイムアウト（30秒）とレートリミット（60回/分）付きで実行する。
+"""
 
 from __future__ import annotations
 
@@ -63,7 +67,7 @@ class _TimeoutError(Exception):
 
 
 def _check_rate_limit(rule_id: str | None) -> None:
-    """Check if a rule has exceeded its execution rate limit."""
+    """ルールが実行回数の上限を超えていないかチェックする。"""
     if rule_id is None:
         return
     with _exec_lock:
@@ -77,7 +81,7 @@ def _check_rate_limit(rule_id: str | None) -> None:
 
 
 def reset_rate_limits() -> None:
-    """Reset all rate limit counters. Called periodically by the scheduler."""
+    """全レートリミットカウンターをリセットする。スケジューラから定期的に呼ばれる。"""
     with _exec_lock:
         _exec_counts.clear()
 
@@ -85,7 +89,7 @@ def reset_rate_limits() -> None:
 def run_sandboxed(
     python_code: str, *, timeout: int = _EXEC_TIMEOUT, rule_id: str | None = None
 ) -> None:
-    """Compile and execute Python code inside RestrictedPython with timeout."""
+    """Python コードを RestrictedPython 内でタイムアウト付きコンパイル・実行する。"""
     _check_rate_limit(rule_id)
 
     # Set rule context for log plugin

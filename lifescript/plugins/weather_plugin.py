@@ -1,4 +1,4 @@
-"""Weather plugin - fetches current weather using wttr.in (no API key required)."""
+"""天気プラグイン — wttr.in を使って現在の天気を取得する（API キー不要）。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class WeatherPlugin(Plugin):
         return False
 
     def fetch(self, city: str = "Tokyo") -> dict:
-        """Fetch current weather for a city."""
+        """指定都市の現在の天気を取得する。"""
         try:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(

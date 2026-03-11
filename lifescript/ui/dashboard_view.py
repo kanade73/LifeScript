@@ -1,4 +1,4 @@
-"""Dashboard view - Miro-style overview with status cards and live logs."""
+"""ダッシュボード画面 — ステータスカード・ルール一覧・ライブログの開発寄りビュー。"""
 
 from __future__ import annotations
 

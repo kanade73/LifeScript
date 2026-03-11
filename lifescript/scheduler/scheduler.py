@@ -1,4 +1,8 @@
-"""APScheduler-based job manager for LifeScript rules."""
+"""APScheduler ベースのジョブ管理 — LifeScript ルールの定期実行を制御する。
+
+DB からルールを読み込み、interval/cron トリガーで APScheduler に登録。
+実行時はサンドボックス経由で Python コードを実行し、エラー時は LLM で再コンパイルを試みる。
+"""
 
 from __future__ import annotations
 
@@ -45,7 +49,7 @@ class LifeScriptScheduler:
     # Rule management
     # ------------------------------------------------------------------
     def load_from_db(self) -> None:
-        """Load all active rules from the database and register them."""
+        """DB から全アクティブルールを読み込み、スケジューラに登録する。"""
         try:
             rules = db_client.get_rules()
             for rule in rules:
@@ -85,7 +89,7 @@ class LifeScriptScheduler:
         log_queue.log("Scheduler", f"'{title}' を登録しました ({trigger_desc})")
 
     def _build_trigger(self, rule: dict) -> IntervalTrigger | CronTrigger:
-        """Build an APScheduler trigger from a rule dict."""
+        """ルール辞書から APScheduler のトリガーを構築する。"""
         trigger_type = rule.get("trigger_type", "interval")
 
         if trigger_type == "cron":
@@ -151,13 +155,13 @@ class LifeScriptScheduler:
     # Rule enable/disable
     # ------------------------------------------------------------------
     def pause_rule(self, rule_id: str) -> None:
-        """Pause a rule (remove from scheduler, set DB status to 'paused')."""
+        """ルールを一時停止する（スケジューラから除去し、DB ステータスを 'paused' に更新）。"""
         self.remove_rule(rule_id)
         db_client.update_rule_status(str(rule_id), "paused")
         log_queue.log("Scheduler", f"ルール {rule_id} を一時停止しました")
 
     def resume_rule(self, rule_id: str) -> None:
-        """Resume a paused rule."""
+        """一時停止中のルールを再開する。"""
         db_client.update_rule_status(str(rule_id), "active")
         rule = db_client.get_rule_by_id(int(rule_id))
         if rule:

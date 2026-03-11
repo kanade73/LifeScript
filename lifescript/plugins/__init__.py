@@ -1,17 +1,17 @@
-"""Plugin auto-discovery and registry.
+"""プラグインの自動検出とレジストリ。
 
-Each plugin module in this package should define a PLUGIN_EXPORTS list:
+各プラグインモジュールは PLUGIN_EXPORTS リストを定義する:
 
     PLUGIN_EXPORTS = [
         {
-            "name": "function_name",
-            "func": callable,
-            "signature": "function_name(arg: type) -> type",
-            "description": "What it does",
+            "name": "関数名",
+            "func": 呼び出し可能オブジェクト,
+            "signature": "関数名(引数: 型) -> 戻り値型",
+            "description": "この関数が何をするかの説明",
         },
     ]
 
-Call discover() once at startup to populate the registry.
+起動時に discover() を一度呼び出すとレジストリに登録される。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ _discovered = False
 
 
 def discover() -> None:
-    """Import all plugin modules and collect their PLUGIN_EXPORTS."""
+    """全プラグインモジュールを import し、PLUGIN_EXPORTS を収集する。"""
     global _discovered  # noqa: PLW0603
     if _discovered:
         return
@@ -46,18 +46,18 @@ def discover() -> None:
 
 
 def get_functions() -> dict[str, Any]:
-    """Return {name: callable} for all registered plugin functions."""
+    """登録済みの全プラグイン関数を {名前: 関数} で返す。"""
     discover()
     return dict(_functions)
 
 
 def get_descriptions() -> dict[str, dict[str, str]]:
-    """Return {name: {signature, description}} for system prompt generation."""
+    """システムプロンプト生成用に {名前: {signature, description}} を返す。"""
     discover()
     return dict(_descriptions)
 
 
 def get_allowed_names() -> set[str]:
-    """Return the set of allowed function names for the validator."""
+    """バリデータ用に許可された関数名のセットを返す。"""
     discover()
     return set(_functions.keys())

@@ -1,4 +1,8 @@
-"""Flet application entry point - Miro-inspired pop design with VSCode-like structure."""
+"""Flet アプリケーションのエントリポイント — Miro 風ポップデザイン + VSCode 風構造。
+
+全画面（Home / Editor / Dashboard）のナビゲーション、ログポーリング、
+ステータスバーを管理するアプリの骨格。
+"""
 
 from __future__ import annotations
 
@@ -45,7 +49,7 @@ COLORS = {
 
 
 def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
-    """Return a Flet main function bound to the given compiler and scheduler."""
+    """コンパイラとスケジューラを束縛した Flet メイン関数を返す。"""
 
     def main(page: ft.Page) -> None:
         page.title = "LifeScript"

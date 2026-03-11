@@ -1,8 +1,8 @@
-"""Database client - Supabase (primary) with SQLite fallback.
+"""データベースクライアント — Supabase（本番）+ SQLite（フォールバック）。
 
-When SUPABASE_URL and SUPABASE_ANON_KEY are set, data is stored in Supabase
-so the iPhone dashboard can read it in real-time.
-Otherwise, falls back to a local SQLite database for development.
+SUPABASE_URL と SUPABASE_ANON_KEY が設定されている場合は Supabase に保存し、
+iPhone ダッシュボードからリアルタイムで読み取れるようにする。
+未設定の場合はローカルの SQLite にフォールバックする（開発用）。
 """
 
 from __future__ import annotations
@@ -216,7 +216,7 @@ class _SQLiteBackend:
 # Unified DatabaseClient facade
 # ======================================================================
 class DatabaseClient:
-    """Unified DB interface. Tries Supabase, falls back to SQLite."""
+    """統一 DB インターフェース。Supabase を試行し、失敗時は SQLite にフォールバック。"""
 
     def __init__(self) -> None:
         self._backend: _SupabaseBackend | _SQLiteBackend | None = None

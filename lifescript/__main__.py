@@ -1,4 +1,4 @@
-"""Entry point: `python -m lifescript` or `lifescript` CLI command."""
+"""エントリポイント: `python -m lifescript` で起動。"""
 
 from __future__ import annotations
 

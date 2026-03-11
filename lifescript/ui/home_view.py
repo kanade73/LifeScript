@@ -1,4 +1,8 @@
-"""Home view - stylish notification feed and activity timeline."""
+"""ホーム画面 — オシャレな通知フィードとアクティビティタイムライン。
+
+アプリ起動時の最初の画面。DB からの最新ログをカード形式で表示し、
+リアルタイム通知をタイムラインとして受信する。
+"""
 
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ _TIME_COLOR = "#B8B0A4"
 
 
 def _time_ago(iso_str: str) -> str:
-    """Convert an ISO timestamp to a human-friendly relative time."""
+    """ISO タイムスタンプを「3分前」のような相対時刻に変換する。"""
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
@@ -40,13 +44,13 @@ def _time_ago(iso_str: str) -> str:
 
 
 def _pick_accent(index: int) -> str:
-    """Cycle through accent colors for visual variety."""
+    """視覚的な多様性のためにアクセントカラーを循環させる。"""
     accents = [_ACCENT_WARM, _ACCENT_MINT, _ACCENT_LAVENDER, _ACCENT_ROSE]
     return accents[index % len(accents)]
 
 
 def _pick_icon(result: str) -> tuple[str, str]:
-    """Return (icon_name, color) based on log result."""
+    """ログの result に応じて (アイコン名, 色) を返す。"""
     if result == "error":
         return ft.Icons.ERROR_OUTLINE_ROUNDED, COLORS["coral"]
     if result == "warning":
@@ -237,7 +241,7 @@ class HomeView:
     # Feed
     # ------------------------------------------------------------------
     def _load_recent_logs(self) -> None:
-        """Load recent logs from DB into the feed."""
+        """DB から最新ログを読み込んでフィードに表示する。"""
         try:
             logs = db_client.get_logs(limit=30)
             if not logs:
@@ -361,7 +365,7 @@ class HomeView:
     # Log receiving (from poll)
     # ------------------------------------------------------------------
     def receive_logs(self, entries: list[str]) -> None:
-        """Receive raw log strings from the central poller and add to feed."""
+        """中央ポーラーから生ログ文字列を受け取りフィードに追加する。"""
         # Remove empty state if present
         if (
             self._feed.controls

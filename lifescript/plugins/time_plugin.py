@@ -1,4 +1,7 @@
-"""Time plugin - provides current time and date information."""
+"""時刻プラグイン — 現在時刻・日付情報を提供する。
+
+LifeScript の fetch(time.now) / fetch(time.today) に対応。
+"""
 
 from datetime import datetime
 
@@ -15,11 +18,11 @@ class TimePlugin(Plugin):
         return False
 
     def fetch_now(self) -> str:
-        """Returns current time as 'HH:MM'."""
+        """現在時刻を 'HH:MM' 形式で返す。"""
         return datetime.now().strftime("%H:%M")
 
     def fetch_today(self) -> dict:
-        """Returns today's weekday and date."""
+        """今日の曜日と日付を辞書で返す。"""
         now = datetime.now()
         return {
             "weekday": now.strftime("%A"),

@@ -1,4 +1,7 @@
-"""Editor view - Miro-style code editor with VSCode-like structure."""
+"""エディタ画面 — Miro 風デザイン + VSCode 風コードエディタ。
+
+LifeScript コードの記述・コンパイル・ルール保存を行うメイン作業画面。
+"""
 
 from __future__ import annotations
 

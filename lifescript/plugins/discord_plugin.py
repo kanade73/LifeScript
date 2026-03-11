@@ -1,4 +1,4 @@
-"""Discord Webhook plugin - sends messages via webhook URL (no bot token needed)."""
+"""Discord Webhook プラグイン — Webhook URL 経由でメッセージを送信する（Bot トークン不要）。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""LifeScript → Python compiler via LLM (LiteLLM)."""
+"""LifeScript → Python コンパイラ（LiteLLM 経由で LLM を呼び出す）。
+
+LifeScript コードを受け取り、LLM にシステムプロンプトと共に送信して
+Python コードに変換する。結果はキャッシュされ、同じコードの再コンパイルを防ぐ。
+"""
 
 from __future__ import annotations
 
@@ -58,7 +62,7 @@ _MAX_CACHE = 128
 
 
 def _build_system_prompt() -> str:
-    """Build the system prompt dynamically from registered plugins."""
+    """登録済みプラグインからシステムプロンプトを動的に構築する。"""
     descs = get_descriptions()
     lines = []
     for name, info in descs.items():
@@ -98,7 +102,7 @@ class Compiler:
             raise CompileError(f"LLMが無効なJSONを返しました: {e}\n内容: {content[:300]}") from e
 
     def _validate_result(self, result: dict) -> dict:
-        """Validate and normalize a compilation result dict."""
+        """コンパイル結果の辞書を検証・正規化する。"""
         if "error" in result:
             raise CompileError(result["error"])
 
@@ -123,7 +127,7 @@ class Compiler:
         return result
 
     def compile(self, lifescript_code: str) -> dict[str, Any]:
-        """Compile LifeScript to Python. Returns dict with title, trigger, code."""
+        """LifeScript を Python にコンパイルする。title, trigger, code を含む辞書を返す。"""
         key = _cache_key(lifescript_code)
         if key in _cache:
             return _cache[key]
@@ -150,7 +154,7 @@ class Compiler:
     def recompile_with_error(
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
-        """Ask the LLM to fix a runtime error in previously generated Python."""
+        """実行時エラーが発生した Python を LLM に修正させる。"""
         # Invalidate cache for this code
         key = _cache_key(lifescript_code)
         _cache.pop(key, None)
@@ -173,5 +177,5 @@ class Compiler:
 
     @staticmethod
     def clear_cache() -> None:
-        """Clear the compile cache."""
+        """コンパイルキャッシュを全消去する。"""
         _cache.clear()
