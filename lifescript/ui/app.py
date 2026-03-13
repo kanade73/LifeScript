@@ -22,6 +22,7 @@ SIDEBAR_BG = "#F0EDE6"
 CARD_BG = "#FFFFFF"
 EDITOR_BG = "#2D2B27"
 EDITOR_FG = "#E8E4DC"
+RED = "#FF0000"
 YELLOW = "#FFD02F"
 ORANGE = "#FFA500"
 BROWN = "#DC8551"
@@ -41,6 +42,7 @@ COLORS = {
     "card_bg": CARD_BG,
     "editor_bg": EDITOR_BG,
     "editor_fg": EDITOR_FG,
+    "red": RED,
     "yellow": YELLOW,
     "blue": BLUE,
     "green": GREEN,
