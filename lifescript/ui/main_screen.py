@@ -205,7 +205,8 @@ class EditorView:
                             color=COLORS["coral"],
                             padding=ft.padding.symmetric(horizontal=14, vertical=10),
                         ),
-                        on_click=lambda e: self._insert_snippet('log("Hello, world!")'),
+                        #ここのlog()の中身を変更
+                        on_click=lambda e: self._insert_snippet('log("表示したい内容をここへ")'),
                     ),
                     ft.OutlinedButton(
                         "fetch",

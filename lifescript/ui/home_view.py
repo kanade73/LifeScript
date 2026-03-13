@@ -235,7 +235,11 @@ class HomeView:
 
         # Scheduler
         label_ctrl3 = self._scheduler_chip.content.controls[1]
-        label_ctrl3.value = "スケジューラ稼働中" if self._scheduler.is_running else "停止中"
+        today_runs = self._count_today_runs()
+        if self._scheduler.is_running:
+            label_ctrl3.value = f"今日の実行回数:{today_runs}回"
+        else:
+            label_ctrl3.value = f"停止中 / 今日の実行回数:{today_runs}回"
 
     # ------------------------------------------------------------------
     # Feed
@@ -243,12 +247,19 @@ class HomeView:
     def _load_recent_logs(self) -> None:
         """DB から最新ログを読み込んでフィードに表示する。"""
         try:
+            rule_titles = self._get_rule_title_map()
             logs = db_client.get_logs(limit=30)
             if not logs:
                 self._feed.controls.append(self._empty_state())
                 return
             for i, log_entry in enumerate(logs):
-                self._feed.controls.append(self._feed_card(log_entry, i))
+                rule_id = log_entry.get("rule_id")
+                rule_key = str(rule_id) if rule_id is not None else ""
+                if rule_key:
+                    rule_title = rule_titles.get(rule_key, "ルール不明")
+                else:
+                    rule_title = "ルール未設定"
+                self._feed.controls.append(self._feed_card(log_entry, i, rule_title))
         except Exception:
             self._feed.controls.append(self._empty_state())
 
@@ -283,13 +294,24 @@ class HomeView:
         )
 
     @staticmethod
-    def _feed_card(log_entry: dict, index: int) -> ft.Container:
+    def _feed_card(log_entry: dict, index: int, rule_title: str) -> ft.Container:
         result = log_entry.get("result", "success")
         icon_name, icon_color = _pick_icon(result)
         message = log_entry.get("message", "")
         time_str = log_entry.get("executed_at", "")
         error_msg = log_entry.get("error_message", "")
         relative_time = _time_ago(time_str)
+
+        title_block: list[ft.Control] = []
+        if rule_title:
+            title_block.append(
+                ft.Text(
+                    rule_title,
+                    size=11,
+                    weight=ft.FontWeight.W_600,
+                    color=COLORS["mid_text"],
+                )
+            )
 
         content_items = [
             ft.Row(
@@ -304,6 +326,7 @@ class HomeView:
                     ),
                     ft.Column(
                         [
+                            *title_block,
                             ft.Text(
                                 message if message else "(empty)",
                                 size=14,
@@ -360,6 +383,15 @@ class HomeView:
             border=ft.border.all(1, _SUBTLE_BORDER),
             animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
         )
+
+    @staticmethod
+    def _get_rule_title_map() -> dict[str, str]:
+        """ルール ID -> タイトルのマップを返す。"""
+        try:
+            rules = db_client.get_rules()
+            return {str(rule["id"]): rule.get("title", "") for rule in rules}
+        except Exception:
+            return {}
 
     # ------------------------------------------------------------------
     # Log receiving (from poll)
@@ -459,3 +491,31 @@ class HomeView:
         self._feed.controls.clear()
         self._feed.controls.append(self._empty_state())
         self._page.update()
+
+    # ------------------------------------------------------------------
+    # Metrics
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _count_today_runs() -> int:
+        """今日の実行ログ数を返す。"""
+        try:
+            logs = db_client.get_logs(limit=300)
+            today = datetime.now().date()
+            count = 0
+            for log_entry in logs:
+                time_str = log_entry.get("executed_at", "")
+                if not time_str:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if dt.tzinfo:
+                    log_date = dt.astimezone().date()
+                else:
+                    log_date = dt.date()
+                if log_date == today:
+                    count += 1
+            return count
+        except Exception:
+            return 0
