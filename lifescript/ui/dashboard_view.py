@@ -14,6 +14,27 @@ class DashboardView:
     def __init__(self, page: ft.Page, scheduler) -> None:
         self._page = page
         self._scheduler = scheduler
+        self._pending_remove_rule_id: str | None = None
+
+        self._remove_confirm_message = ft.Text(
+            "このルールを削除しますか？",
+            size=13,
+            color=COLORS["dark_text"],
+        )
+        self._remove_confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("ルール削除の確認", weight=ft.FontWeight.W_700),
+            content=self._remove_confirm_message,
+            actions=[
+                ft.TextButton("Cancel", on_click=self._close_remove_confirm),
+                ft.TextButton(
+                    "Delete",
+                    style=ft.ButtonStyle(color=COLORS["coral"]),
+                    on_click=self._confirm_remove_rule,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
 
         # ── Status cards ────────────────────────────────────────────
         self._scheduler_card = self._status_card(
@@ -257,6 +278,7 @@ class DashboardView:
 
     def _rule_card(self, rule: dict, active_ids: set[str]) -> ft.Container:
         is_active = str(rule["id"]) in active_ids
+        rule_id = str(rule["id"])
         interval_sec = rule.get("trigger_seconds", 60)
         if interval_sec >= 3600:
             interval_label = f"every {interval_sec // 3600}h"
@@ -298,6 +320,30 @@ class DashboardView:
                         border_radius=8,
                         padding=ft.padding.symmetric(horizontal=8, vertical=2),
                     ),
+                    ft.OutlinedButton(
+                        "Pause",
+                        icon=ft.Icons.PAUSE_ROUNDED,
+                        disabled=not is_active,
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["coral"]),
+                            color=COLORS["coral"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e, rid=rule_id: self._on_pause_rule(rid),
+                    ),
+                    ft.OutlinedButton(
+                        "Delete",
+                        icon=ft.Icons.DELETE_ROUNDED,
+                        disabled=False,
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            side=ft.BorderSide(1, COLORS["red"]),
+                            color=COLORS["red"],
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
+                        on_click=lambda e, rid=rule_id, title=rule.get("title", "untitled"): self._on_remove_click(rid, title),
+                    ),
                 ],
                 spacing=8,
             ),
@@ -309,7 +355,7 @@ class DashboardView:
         )
 
     # ------------------------------------------------------------------
-    # Periodic refresh timer
+    # Periodic refresh timer and rule actions
     # ------------------------------------------------------------------
     def _start_refresh_timer(self) -> None:
         def refresh() -> None:
@@ -323,3 +369,41 @@ class DashboardView:
         t = threading.Timer(5.0, refresh)
         t.daemon = True
         t.start()
+        
+    def _on_pause_rule(self, rule_id: str) -> None:
+        try:
+            self._scheduler.pause_rule(rule_id)
+            self._refresh_status()
+            self._refresh_cards()
+            self._page.update()
+        except Exception:
+            pass
+
+    def _on_remove_click(self, rule_id: str, title: str) -> None:
+        self._pending_remove_rule_id = rule_id
+        self._remove_confirm_message.value = f"『{title}』を削除しますか？"
+        if self._remove_confirm_dialog not in self._page.overlay:
+            self._page.overlay.append(self._remove_confirm_dialog)
+        self._remove_confirm_dialog.open = True
+        self._page.update()
+
+    def _close_remove_confirm(self, e) -> None:
+        self._remove_confirm_dialog.open = False
+        self._page.update()
+
+    def _confirm_remove_rule(self, e) -> None:
+        if not self._pending_remove_rule_id:
+            self._close_remove_confirm(e)
+            return
+
+        rule_id = self._pending_remove_rule_id
+        self._pending_remove_rule_id = None
+        try:
+            self._scheduler.remove_rule(rule_id)
+            db_client.delete_rule(rule_id)
+            self._refresh_status()
+            self._refresh_cards()
+        except Exception:
+            pass
+        self._remove_confirm_dialog.open = False
+        self._page.update()
