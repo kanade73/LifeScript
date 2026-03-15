@@ -16,6 +16,8 @@ import flet as ft
 from ..database.client import db_client
 from .app import COLORS
 
+_JST = timezone(timedelta(hours=9))
+
 
 class DashboardView:
     def __init__(self, page: ft.Page, scheduler) -> None:
@@ -409,7 +411,7 @@ class DashboardView:
 
         # Events this week
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(_JST)
             start = now - timedelta(days=now.weekday())
             start = start.replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + timedelta(days=7)

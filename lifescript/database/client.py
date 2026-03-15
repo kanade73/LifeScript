@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ _SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS scripts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         TEXT DEFAULT 'local',
+    name            TEXT DEFAULT '',
     dsl_text        TEXT NOT NULL,
     compiled_python TEXT DEFAULT '',
     active          INTEGER DEFAULT 1,
@@ -54,12 +55,15 @@ CREATE TABLE IF NOT EXISTS streaks (
 """
 
 
+_JST = timezone(timedelta(hours=9))
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(_JST).isoformat()
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(_JST).strftime("%Y-%m-%d")
 
 
 # ======================================================================
@@ -72,14 +76,22 @@ class _SupabaseBackend:
         self._client = create_client(url, key)
 
     # -- Scripts --------------------------------------------------------
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
-        data = {
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
+        data: dict[str, Any] = {
             "dsl_text": dsl_text,
             "compiled_python": compiled_python,
             "active": True,
         }
-        resp = self._client.table("scripts").insert(data).execute()
-        return resp.data[0]
+        if name:
+            data["name"] = name
+        try:
+            resp = self._client.table("scripts").insert(data).execute()
+            return resp.data[0]
+        except Exception:
+            # name カラムが未追加の場合はnameなしでリトライ
+            data.pop("name", None)
+            resp = self._client.table("scripts").insert(data).execute()
+            return resp.data[0]
 
     def get_scripts(self, user_id: str = "local") -> list[dict]:
         resp = (
@@ -99,7 +111,13 @@ class _SupabaseBackend:
         return resp.data[0]
 
     def update_script(self, script_id: int, **kwargs: Any) -> None:
-        self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
+        try:
+            self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
+        except Exception:
+            # name カラム未追加時のフォールバック
+            kwargs.pop("name", None)
+            if kwargs:
+                self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
 
     def delete_script(self, script_id: int) -> None:
         self._client.table("scripts").update({"active": False}).eq("id", script_id).execute()
@@ -216,6 +234,11 @@ class _SQLiteBackend:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SQLITE_SCHEMA)
+        # Migration: add name column if missing (existing DBs)
+        try:
+            self._conn.execute("SELECT name FROM scripts LIMIT 1")
+        except sqlite3.OperationalError:
+            self._conn.execute("ALTER TABLE scripts ADD COLUMN name TEXT DEFAULT ''")
         self._conn.commit()
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
@@ -239,10 +262,10 @@ class _SQLiteBackend:
             return dict(row) if row else None
 
     # -- Scripts --------------------------------------------------------
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
         cur = self._execute(
-            "INSERT INTO scripts (user_id, dsl_text, compiled_python, created_at) VALUES (?,?,?,?)",
-            (user_id, dsl_text, compiled_python, _now()),
+            "INSERT INTO scripts (user_id, name, dsl_text, compiled_python, created_at) VALUES (?,?,?,?,?)",
+            (user_id, name, dsl_text, compiled_python, _now()),
         )
         return self.get_script_by_id(cur.lastrowid)
 
@@ -391,8 +414,8 @@ class DatabaseClient:
         return self._backend
 
     # Scripts
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
-        return self._b().save_script(dsl_text, compiled_python, user_id)
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
+        return self._b().save_script(dsl_text, compiled_python, user_id, name)
 
     def get_scripts(self, user_id: str = "local") -> list[dict]:
         return self._b().get_scripts(user_id)

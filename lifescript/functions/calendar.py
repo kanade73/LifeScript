@@ -13,7 +13,7 @@ from .. import log_queue
 
 
 def _week_range() -> tuple[str, str]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone(timedelta(hours=9)))
     start = now - timedelta(days=now.weekday())
     start = start.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=7)
@@ -21,14 +21,14 @@ def _week_range() -> tuple[str, str]:
 
 
 def _today_range() -> tuple[str, str]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone(timedelta(hours=9)))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     return start.isoformat(), end.isoformat()
 
 
 def _month_range() -> tuple[str, str]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone(timedelta(hours=9)))
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if now.month == 12:
         end = start.replace(year=now.year + 1, month=1)

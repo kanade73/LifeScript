@@ -11,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from ..sandbox.runner import run_sandboxed, reset_rate_limits
 from ..compiler.compiler import Compiler
+from ..context_analyzer import ContextAnalyzer
 from ..database.client import db_client
 from ..exceptions import SandboxError, CompileError
 from .. import log_queue
@@ -20,6 +21,7 @@ class LifeScriptScheduler:
     def __init__(self, compiler: Compiler) -> None:
         self._scheduler = BackgroundScheduler(timezone="UTC")
         self._compiler = compiler
+        self._analyzer = ContextAnalyzer(model=compiler.model)
         self._job_map: dict[str, str] = {}  # script_id → apscheduler job_id
         self._trigger_map: dict[str, dict] = {}  # script_id → trigger dict
         self._paused: set[str] = set()  # paused script IDs
@@ -35,6 +37,20 @@ class LifeScriptScheduler:
                 trigger=IntervalTrigger(seconds=60),
                 id="_rate_limit_reset",
                 replace_existing=True,
+            )
+            # コンテキスト分析ジョブ（3時間ごと + 起動30秒後に初回実行）
+            self._scheduler.add_job(
+                self._run_analysis,
+                trigger=IntervalTrigger(hours=3),
+                id="_context_analyzer",
+                replace_existing=True,
+            )
+            from datetime import datetime, timedelta
+            self._scheduler.add_job(
+                self._run_analysis,
+                trigger="date",
+                run_date=datetime.now() + timedelta(seconds=30),
+                id="_context_analyzer_initial",
             )
 
     def stop(self) -> None:
@@ -173,6 +189,24 @@ class LifeScriptScheduler:
             return f"毎日 {trigger.get('hour', 0):02d}:{trigger.get('minute', 0):02d}"
         seconds = trigger.get("seconds", 3600)
         return self._describe_interval(seconds)
+
+    # ------------------------------------------------------------------
+    # Context Analysis
+    # ------------------------------------------------------------------
+    def _run_analysis(self) -> None:
+        """コンテキスト分析を実行して提案を生成する。"""
+        try:
+            self._analyzer.analyze()
+        except Exception as e:
+            log_queue.log("Analyzer", f"分析ジョブエラー: {e}", "ERROR")
+
+    def run_analysis_now(self) -> list[dict]:
+        """手動で即時分析を実行する（UIから呼ぶ用）。"""
+        try:
+            return self._analyzer.analyze()
+        except Exception as e:
+            log_queue.log("Analyzer", f"分析エラー: {e}", "ERROR")
+            return []
 
     # ------------------------------------------------------------------
     # Execution
