@@ -173,7 +173,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                                 width=36, height=36, bgcolor=BLUE,
                                 border_radius=10, alignment=ft.Alignment(0, 0),
                             ),
-                            ft.Text("LifeScript", size=14, weight=ft.FontWeight.W_800, color=CARD_BG),
+                            ft.Text("LifeScript", size=14, weight=ft.FontWeight.W_800, color=DARK_TEXT),
                         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                         padding=ft.padding.only(left=4),
                     ),
