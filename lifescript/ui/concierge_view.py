@@ -1,0 +1,293 @@
+"""コンシェルジュ画面 — マシンとの汎用チャット。
+
+カレンダー・通知・生活全般についてマシンに相談できる。
+即時アクション（予定追加・通知）を実行し、DSLはコピペ用に表示。
+"""
+
+from __future__ import annotations
+
+import re
+import threading
+
+import flet as ft
+
+from ..chat import ChatEngine
+from .app import (
+    BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE, PURPLE,
+    DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG,
+)
+
+_BORDER = "#E8E4DC"
+
+_WELCOME_MESSAGES = [
+    "何か予定を入れたいときは「〇〇日に〇〇入れて」と伝えてください。",
+    "カレンダーの内容について質問もできます。",
+    "LifeScript のルールを作りたいときも相談してください。",
+]
+
+
+class ConciergeView:
+    def __init__(self, page: ft.Page, model: str | None = None) -> None:
+        self._page = page
+        self._chat_engine = ChatEngine(model=model)
+        self._chat_messages = ft.ListView(
+            expand=True, spacing=8, padding=ft.padding.symmetric(horizontal=16, vertical=8),
+            auto_scroll=True,
+        )
+        self._input = ft.TextField(
+            hint_text="マシンに話しかけてください…",
+            text_size=14,
+            border_radius=24,
+            bgcolor=CARD_BG,
+            border_color=_BORDER,
+            focused_border_color=BLUE,
+            content_padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            expand=True,
+            on_submit=self._on_send,
+        )
+        self._send_btn = ft.IconButton(
+            ft.Icons.SEND_ROUNDED, icon_size=22, icon_color=CARD_BG,
+            bgcolor=BLUE, style=ft.ButtonStyle(padding=12, shape=ft.CircleBorder()),
+            tooltip="送信",
+            on_click=self._on_send,
+        )
+
+    def build(self) -> ft.Control:
+        # ウェルカムメッセージ
+        if not self._chat_messages.controls:
+            self._chat_messages.controls.append(self._welcome_bubble())
+
+        header = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=24, color=CARD_BG),
+                    width=40, height=40, bgcolor=BLUE, border_radius=12,
+                    alignment=ft.Alignment(0, 0),
+                ),
+                ft.Container(width=10),
+                ft.Column([
+                    ft.Text("マシン", size=20, weight=ft.FontWeight.W_800, color=DARK_TEXT),
+                    ft.Text("あなたの生活を把握するコンシェルジュ", size=12, color=MID_TEXT),
+                ], spacing=1),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    ft.Icons.REFRESH_ROUNDED, icon_size=20, icon_color=LIGHT_TEXT,
+                    tooltip="会話をリセット",
+                    style=ft.ButtonStyle(padding=8),
+                    on_click=self._on_clear,
+                ),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            border=ft.border.only(bottom=ft.BorderSide(1, _BORDER)),
+        )
+
+        input_bar = ft.Container(
+            content=ft.Row([
+                self._input,
+                self._send_btn,
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            border=ft.border.only(top=ft.BorderSide(1, _BORDER)),
+        )
+
+        return ft.Container(
+            content=ft.Column([
+                header,
+                self._chat_messages,
+                input_bar,
+            ], expand=True, spacing=0),
+            expand=True,
+            bgcolor=BG,
+            border_radius=ft.border_radius.only(top_left=16),
+        )
+
+    def receive_logs(self, entries: list) -> None:
+        pass  # ログは表示しない
+
+    # ------------------------------------------------------------------
+    # Chat logic
+    # ------------------------------------------------------------------
+    def _on_send(self, e: ft.ControlEvent) -> None:
+        msg = (self._input.value or "").strip()
+        if not msg:
+            return
+        self._input.value = ""
+        self._chat_messages.controls.append(self._user_bubble(msg))
+        loading = self._loading_bubble()
+        self._chat_messages.controls.append(loading)
+        self._page.update()
+
+        def _call() -> None:
+            try:
+                reply, actions = self._chat_engine.send(msg)
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                for action in actions:
+                    self._chat_messages.controls.append(self._action_bubble(action))
+                self._chat_messages.controls.append(self._assistant_bubble(reply))
+            except Exception as ex:
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                self._chat_messages.controls.append(self._error_bubble(str(ex)))
+            self._page.update()
+
+        threading.Thread(target=_call, daemon=True).start()
+
+    def _on_clear(self, e: ft.ControlEvent) -> None:
+        self._chat_engine.clear()
+        self._chat_messages.controls.clear()
+        self._chat_messages.controls.append(self._welcome_bubble())
+        self._page.update()
+
+    # ------------------------------------------------------------------
+    # Bubble builders
+    # ------------------------------------------------------------------
+    def _welcome_bubble(self) -> ft.Container:
+        items = [
+            ft.Row([
+                ft.Container(
+                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=20, color=CARD_BG),
+                    width=32, height=32, bgcolor=BLUE, border_radius=10,
+                    alignment=ft.Alignment(0, 0),
+                ),
+                ft.Text("マシンです。何でも聞いてください！", size=14,
+                        weight=ft.FontWeight.W_600, color=DARK_TEXT),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Container(height=4),
+        ]
+        for msg in _WELCOME_MESSAGES:
+            items.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.ARROW_RIGHT_ROUNDED, size=16, color=BLUE),
+                    ft.Text(msg, size=13, color=MID_TEXT),
+                ], spacing=6),
+                padding=ft.padding.only(left=8),
+            ))
+
+        return ft.Container(
+            content=ft.Column(items, spacing=4),
+            bgcolor=f"{BLUE}08",
+            border_radius=16,
+            padding=16,
+            border=ft.border.all(1, f"{BLUE}20"),
+            margin=ft.margin.only(right=40),
+        )
+
+    def _user_bubble(self, text: str) -> ft.Container:
+        return ft.Container(
+            content=ft.Text(text, size=14, color=CARD_BG),
+            bgcolor=BLUE,
+            border_radius=ft.border_radius.only(
+                top_left=16, top_right=16, bottom_left=16, bottom_right=4),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            margin=ft.margin.only(left=80),
+        )
+
+    def _assistant_bubble(self, text: str) -> ft.Container:
+        # actionブロック除去
+        display = re.sub(r"```action\s*\n?.*?```", "", text, flags=re.DOTALL).strip()
+
+        # lifescriptブロックをコピペ用コードとして表示
+        parts = re.split(r"```(?:lifescript|ls|yaml)?\s*\n?(.*?)```", display, flags=re.DOTALL)
+        controls: list[ft.Control] = []
+
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            if i % 2 == 0:
+                controls.append(ft.Text(part, size=14, color=DARK_TEXT))
+            else:
+                code = part.strip()
+                controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Container(
+                                content=ft.Text("LifeScript", size=10, color=LIGHT_TEXT,
+                                                weight=ft.FontWeight.W_600),
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            ),
+                            ft.Container(expand=True),
+                            ft.TextButton(
+                                "コピー",
+                                icon=ft.Icons.COPY_ROUNDED,
+                                style=ft.ButtonStyle(
+                                    color=BLUE, padding=ft.padding.symmetric(horizontal=8),
+                                    text_style=ft.TextStyle(size=11),
+                                ),
+                                on_click=lambda e, c=code: self._copy_to_clipboard(c),
+                            ),
+                        ], spacing=0),
+                        ft.Container(
+                            content=ft.Text(
+                                code, size=12, color="#E8E4DC",
+                                font_family="Courier New, monospace",
+                                selectable=True,
+                            ),
+                            bgcolor="#2D2B27",
+                            border_radius=8,
+                            padding=12,
+                        ),
+                    ], spacing=2),
+                    border=ft.border.all(1, _BORDER),
+                    border_radius=10,
+                ))
+
+        if not controls:
+            controls.append(ft.Text(display or "…", size=14, color=DARK_TEXT))
+
+        return ft.Container(
+            content=ft.Column(controls, spacing=8),
+            bgcolor=CARD_BG,
+            border_radius=ft.border_radius.only(
+                top_left=16, top_right=16, bottom_left=4, bottom_right=16),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            margin=ft.margin.only(right=40),
+            border=ft.border.all(1, _BORDER),
+        )
+
+    def _action_bubble(self, action: dict) -> ft.Container:
+        success = action.get("success", False)
+        desc = action.get("description", "")
+        icon = ft.Icons.CHECK_CIRCLE_ROUNDED if success else ft.Icons.ERROR_ROUNDED
+        color = GREEN if success else CORAL
+        bg = "#F0FFF0" if success else "#FFF0F0"
+
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=18, color=color),
+                ft.Text(desc, size=13, color=DARK_TEXT, expand=True,
+                        weight=ft.FontWeight.W_500),
+            ], spacing=8),
+            bgcolor=bg,
+            border_radius=12,
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+            border=ft.border.all(1, color),
+            margin=ft.margin.only(right=40),
+        )
+
+    def _loading_bubble(self) -> ft.Container:
+        return ft.Container(
+            content=ft.Row([
+                ft.ProgressRing(width=16, height=16, stroke_width=2, color=BLUE),
+                ft.Text("考え中…", size=13, color=LIGHT_TEXT),
+            ], spacing=8),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            margin=ft.margin.only(right=40),
+        )
+
+    def _error_bubble(self, msg: str) -> ft.Container:
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.ERROR_OUTLINE_ROUNDED, size=18, color=CORAL),
+                ft.Text(f"エラー: {msg}", size=13, color=CORAL, expand=True),
+            ], spacing=8),
+            bgcolor="#FFF0F0",
+            border_radius=12,
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+            border=ft.border.all(1, CORAL),
+        )
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        self._page.set_clipboard(text)
+        self._page.update()

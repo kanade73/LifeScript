@@ -105,6 +105,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             from .main_screen import EditorView
             from .dashboard_view import DashboardView
             from .reference_view import ReferenceView
+            from .concierge_view import ConciergeView
 
             # ── DB connect ──────────────────────────────────────
             db_client.connect()
@@ -116,8 +117,9 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
             dashboard_view = DashboardView(page=page, scheduler=scheduler)
             reference_view = ReferenceView(page=page)
+            concierge_view = ConciergeView(page=page, model=compiler.model)
 
-            views = [home_view, editor_view, dashboard_view, reference_view]
+            views = [home_view, editor_view, dashboard_view, reference_view, concierge_view]
             active_view: list = [home_view]
 
             # ── Content area ─────────────────────────────────────
@@ -137,6 +139,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 (ft.Icons.CODE_ROUNDED, "IDE"),
                 (ft.Icons.DASHBOARD_ROUNDED, "Dashboard"),
                 (ft.Icons.MENU_BOOK_ROUNDED, "Reference"),
+                (ft.Icons.AUTO_AWESOME_ROUNDED, "Machine"),
             ]
 
             def _build_nav_row(index: int) -> ft.Container:

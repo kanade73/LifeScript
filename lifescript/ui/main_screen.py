@@ -13,7 +13,10 @@ import threading
 
 import flet as ft
 
+import re
+
 from ..compiler.compiler import Compiler
+from ..chat import CodingChat
 from ..database.client import db_client
 from ..exceptions import CompileError
 from .app import COLORS
@@ -141,21 +144,100 @@ class EditorView:
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-        # ── Scripts list (sidebar) ────────────────────────────
+        # ── Scripts list ───────────────────────────────────────
         self._scripts_list = ft.ListView(expand=True, spacing=4, padding=4)
+
+        scripts_panel = ft.Column([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.BOLT_ROUNDED, size=16, color=COLORS["yellow"]),
+                    ft.Text("Scripts", size=13, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
+                ], spacing=6),
+                padding=ft.padding.only(left=8, top=4, bottom=4),
+            ),
+            self._scripts_list,
+        ], expand=True, spacing=8)
+
+        # ── Chat panel ────────────────────────────────────────
+        self._chat_engine = CodingChat(model=compiler.model)
+        self._chat_messages = ft.ListView(expand=True, spacing=6, padding=4, auto_scroll=True)
+        self._chat_input = ft.TextField(
+            hint_text="やりたいことを伝えてください…",
+            text_size=13,
+            border_radius=10,
+            bgcolor=COLORS["bg"],
+            border_color=_BORDER,
+            focused_border_color=COLORS["blue"],
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            on_submit=self._on_chat_send,
+            suffix=ft.IconButton(
+                ft.Icons.SEND_ROUNDED, icon_size=18, icon_color=COLORS["blue"],
+                style=ft.ButtonStyle(padding=4),
+                on_click=self._on_chat_send,
+            ),
+        )
+
+        chat_panel = ft.Column([
+            self._chat_messages,
+            self._chat_input,
+        ], expand=True, spacing=8)
+
+        # ── Sidebar (Scripts / Chat タブ切り替え) ─────────────
+        self._sidebar_content = ft.Container(content=scripts_panel, expand=True)
+        self._sidebar_mode = ["scripts"]  # "scripts" or "chat"
+
+        def _switch_sidebar(mode: str) -> None:
+            self._sidebar_mode[0] = mode
+            self._sidebar_content.content = scripts_panel if mode == "scripts" else chat_panel
+            self._rebuild_sidebar_tabs()
+            self._page.update()
+
+        self._switch_sidebar = _switch_sidebar
+
+        self._sidebar_tab_row = ft.Row(spacing=2)
+
+        def _rebuild_sidebar_tabs() -> None:
+            mode = self._sidebar_mode[0]
+            self._sidebar_tab_row.controls = [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.BOLT_ROUNDED, size=14,
+                                color=COLORS["yellow"] if mode == "scripts" else COLORS["light_text"]),
+                        ft.Text("Scripts", size=12,
+                                weight=ft.FontWeight.W_600 if mode == "scripts" else ft.FontWeight.W_400,
+                                color=COLORS["dark_text"] if mode == "scripts" else COLORS["mid_text"]),
+                    ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                    border_radius=ft.border_radius.only(top_left=10, top_right=10),
+                    bgcolor=COLORS["card_bg"] if mode == "scripts" else ft.Colors.TRANSPARENT,
+                    border=ft.border.only(bottom=ft.BorderSide(2, COLORS["yellow"])) if mode == "scripts" else None,
+                    on_click=lambda e: _switch_sidebar("scripts"),
+                ),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CHAT_ROUNDED, size=14,
+                                color=COLORS["blue"] if mode == "chat" else COLORS["light_text"]),
+                        ft.Text("Chat", size=12,
+                                weight=ft.FontWeight.W_600 if mode == "chat" else ft.FontWeight.W_400,
+                                color=COLORS["dark_text"] if mode == "chat" else COLORS["mid_text"]),
+                    ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                    border_radius=ft.border_radius.only(top_left=10, top_right=10),
+                    bgcolor=COLORS["card_bg"] if mode == "chat" else ft.Colors.TRANSPARENT,
+                    border=ft.border.only(bottom=ft.BorderSide(2, COLORS["blue"])) if mode == "chat" else None,
+                    on_click=lambda e: _switch_sidebar("chat"),
+                ),
+            ]
+
+        self._rebuild_sidebar_tabs = _rebuild_sidebar_tabs
+        _rebuild_sidebar_tabs()
 
         sidebar = ft.Container(
             content=ft.Column([
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.Icons.BOLT_ROUNDED, size=16, color=COLORS["yellow"]),
-                        ft.Text("Scripts", size=13, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
-                    ], spacing=6),
-                    padding=ft.padding.only(left=8, top=4, bottom=4),
-                ),
-                self._scripts_list,
-            ], expand=True, spacing=8),
-            width=200,
+                self._sidebar_tab_row,
+                self._sidebar_content,
+            ], expand=True, spacing=4),
+            width=280,
             bgcolor=COLORS["card_bg"],
             border_radius=16,
             padding=12,
@@ -480,6 +562,134 @@ class EditorView:
         name_field.on_submit = _save
         self._page.overlay.append(dialog)
         dialog.open = True
+        self._page.update()
+
+    # ==================================================================
+    # Helpers
+    # ==================================================================
+    # ==================================================================
+    # チャット
+    # ==================================================================
+    def _on_chat_send(self, e: ft.ControlEvent) -> None:
+        msg = (self._chat_input.value or "").strip()
+        if not msg:
+            return
+        self._chat_input.value = ""
+        self._chat_messages.controls.append(self._chat_bubble(msg, is_user=True))
+        # ローディング表示
+        loading = ft.Container(
+            content=ft.Row([
+                ft.ProgressRing(width=14, height=14, stroke_width=2, color=COLORS["blue"]),
+                ft.Text("考え中…", size=12, color=COLORS["light_text"]),
+            ], spacing=6),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        )
+        self._chat_messages.controls.append(loading)
+        self._page.update()
+
+        def _call() -> None:
+            try:
+                reply = self._chat_engine.send(msg)
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                self._chat_messages.controls.append(self._chat_bubble(reply, is_user=False))
+            except Exception as ex:
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                self._chat_messages.controls.append(self._chat_bubble(
+                    f"エラー: {ex}", is_user=False, is_error=True))
+            self._page.update()
+
+        threading.Thread(target=_call, daemon=True).start()
+
+    def _chat_bubble(self, text: str, is_user: bool = False,
+                     is_error: bool = False) -> ft.Container:
+        if is_user:
+            return ft.Container(
+                content=ft.Text(text, size=13, color=COLORS["card_bg"]),
+                bgcolor=COLORS["blue"],
+                border_radius=ft.border_radius.only(
+                    top_left=12, top_right=12, bottom_left=12, bottom_right=4),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                margin=ft.margin.only(left=40),
+            )
+
+        if is_error:
+            return ft.Container(
+                content=ft.Text(text, size=13, color=COLORS["coral"]),
+                bgcolor="#FFF0F0",
+                border_radius=12,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            )
+
+        # アシスタントメッセージ: コードブロックを抽出してInsertボタン付きで表示
+        parts = re.split(r"```(?:lifescript|ls|yaml)?\s*\n?(.*?)```", text, flags=re.DOTALL)
+        controls: list[ft.Control] = []
+
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            if i % 2 == 0:
+                # テキスト部分
+                controls.append(ft.Text(part, size=13, color=COLORS["dark_text"]))
+            else:
+                # コードブロック部分
+                code = part.strip()
+                controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Container(
+                            content=ft.Text(
+                                code, size=12, color=COLORS["editor_fg"],
+                                font_family="Courier New, monospace",
+                                selectable=True,
+                            ),
+                            bgcolor=COLORS["editor_bg"],
+                            border_radius=8,
+                            padding=10,
+                        ),
+                        ft.Row([
+                            ft.Container(expand=True),
+                            ft.ElevatedButton(
+                                "エディタに挿入",
+                                icon=ft.Icons.ADD_ROUNDED,
+                                bgcolor=COLORS["green"],
+                                color=COLORS["card_bg"],
+                                style=ft.ButtonStyle(
+                                    shape=ft.RoundedRectangleBorder(radius=8),
+                                    elevation=0,
+                                    padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                                    text_style=ft.TextStyle(size=12),
+                                ),
+                                on_click=lambda e, c=code: self._insert_from_chat(c),
+                            ),
+                        ]),
+                    ], spacing=4),
+                ))
+
+        if not controls:
+            controls.append(ft.Text(text or "（応答なし）", size=13, color=COLORS["dark_text"]))
+
+        return ft.Container(
+            content=ft.Column(controls, spacing=6),
+            bgcolor="#F8F7F4",
+            border_radius=ft.border_radius.only(
+                top_left=12, top_right=12, bottom_left=4, bottom_right=12),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            margin=ft.margin.only(right=20),
+        )
+
+    def _insert_from_chat(self, code: str) -> None:
+        """チャットで生成されたDSLをアクティブタブのエディタに挿入する。"""
+        current = self._editor.value or ""
+        if current.strip() and not current.endswith("\n"):
+            current += "\n\n"
+        elif current.strip():
+            current += "\n"
+        self._editor.value = current + code
+        self._active_tab.dsl_text = self._editor.value
+        self._prev_editor_value = self._editor.value
+        self._log(f"チャットからDSLを挿入しました", COLORS["green"])
         self._page.update()
 
     # ==================================================================
