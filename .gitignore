@@ -44,5 +44,8 @@ dmypy.json
 # macOS
 .DS_Store
 
+# Archives
+*.zip
+
 # Claude Code project memory
 .claude/
