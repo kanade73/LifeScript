@@ -1,38 +1,18 @@
-"""静的解析 — 生成された Python がホワイトリスト内の関数のみを呼び出しているか検証する。
-
-LLM が生成したコードを実行前に AST レベルでチェックし、
-import / exec / open 等の危険な操作をブロックする（セキュリティ第一層）。
-"""
+"""静的解析 — 生成された Python がホワイトリスト内の関数のみを呼び出しているか検証する。"""
 
 import ast
 
 from ..exceptions import ValidationError
-from ..plugins import get_allowed_names
+from ..functions import ALLOWED_NAMES
 
-# Built-in functions that are safe to call
 _SAFE_BUILTINS = {"str", "int", "float", "bool", "len", "range", "list", "dict", "print"}
 
-# Dangerous names that must never appear
 _FORBIDDEN_NAMES = {
-    "exec",
-    "eval",
-    "compile",
-    "__import__",
-    "open",
-    "getattr",
-    "setattr",
-    "delattr",
-    "globals",
-    "locals",
-    "vars",
-    "dir",
-    "breakpoint",
-    "exit",
-    "quit",
-    "input",
-    "memoryview",
-    "type",
-    "super",
+    "exec", "eval", "compile", "__import__", "open",
+    "getattr", "setattr", "delattr",
+    "globals", "locals", "vars", "dir",
+    "breakpoint", "exit", "quit", "input",
+    "memoryview", "type", "super",
 }
 
 
@@ -55,8 +35,6 @@ class _Visitor(ast.NodeVisitor):
             elif name not in self._allowed:
                 self.errors.append(f"許可されていない関数の呼び出し: {name}()")
         elif isinstance(node.func, ast.Attribute):
-            # Allow safe attribute calls like str.format, dict.get, etc.
-            # But block potentially dangerous ones
             attr_name = node.func.attr
             if attr_name.startswith("_"):
                 self.errors.append(
@@ -86,8 +64,7 @@ def validate_python(code: str) -> None:
     except SyntaxError as e:
         raise ValidationError(f"生成されたコードに構文エラーがあります: {e}") from e
 
-    allowed = get_allowed_names()
-    visitor = _Visitor(allowed)
+    visitor = _Visitor(ALLOWED_NAMES)
     visitor.visit(tree)
 
     if visitor.errors:

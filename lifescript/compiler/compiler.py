@@ -1,7 +1,7 @@
-"""LifeScript → Python コンパイラ（LiteLLM 経由で LLM を呼び出す）。
+"""LifeScript DSL → Python コンパイラ（LiteLLM 経由で LLM を呼び出す）。
 
-LifeScript コードを受け取り、LLM にシステムプロンプトと共に送信して
-Python コードに変換する。結果はキャッシュされ、同じコードの再コンパイルを防ぐ。
+LifeScript の YAML 風 DSL を受け取り、LLM で Python コードに変換する。
+コンパイル時のみ LLM を使用し、実行時は不使用 → コスト最小化。
 """
 
 from __future__ import annotations
@@ -14,61 +14,72 @@ from typing import Any
 import litellm
 
 from ..exceptions import CompileError
-from ..plugins import get_descriptions
+from ..functions import FUNCTION_DESCRIPTIONS
 from .validator import validate_python
 
-_SYSTEM_PROMPT_TEMPLATE = """\
+_SYSTEM_PROMPT = """\
 あなたは LifeScript → Python コンパイラです。
 
-LifeScript は「暮らしの自動化」のためのホワイトリスト方式 DSL です。
-与えられた LifeScript を、以下に列挙された関数 **のみ** を使った Python に変換してください。
+LifeScript は「マシン」という相棒に自分の生活文脈を伝えるための DSL です。
+ユーザーが書いた LifeScript を、以下の関数ライブラリのみを使った Python コードに変換してください。
 出力は JSON のみ。マークダウンや説明文は不要です。
 
-## 使用可能な関数
+## 関数ライブラリ（使用可能な関数）
 {functions_section}
 
-## LifeScript → Python 変換ルール
-| LifeScript                     | Python                           |
-|--------------------------------|----------------------------------|
-| fetch(time.now)                | fetch_time_now()                 |
-| fetch(time.today)              | fetch_time_today()               |
-| log("msg")                     | log("msg")                       |
-| let x = expr                   | x = expr                         |
-| when cond {{ ... }}            | if cond: ...                     |
-| if cond {{ ... }} else {{ }}   | if cond: ... else: ...           |
-| repeat N {{ ... }}             | for _ in range(N): ...           |
-| every day {{ ... }}            | trigger=interval(seconds=86400)  |
-| every Nh {{ ... }}             | trigger=interval(seconds=N*3600) |
-| every Nm {{ ... }}             | trigger=interval(seconds=N*60)   |
+## DSL → Python 変換ルール
+
+LifeScript の DSL は YAML 風の宣言的記法です:
+
+| DSL パターン | Python |
+|---|---|
+| `when <条件>:` | `if <条件>:` |
+| `calendar.read("keyword")` | `calendar_read(keyword="keyword")` |
+| `calendar.read("keyword").count_this_week` | `calendar_read(keyword="keyword").count_this_week` |
+| `calendar.add(title, start, ...)` | `calendar_add(title, start, ...)` |
+| `calendar.suggest(title, on, ...)` | `calendar_suggest(title, on, ...)` |
+| `notify("message")` | `notify("message")` |
+| `notify("message", at="2025-01-01T08:00:00")` | `notify("message", at="2025-01-01T08:00:00")` |
+
+自然言語で書かれたルールも Python に変換してください。
+例: 「バイトが週4以上なら回復タイムを提案」→ if calendar_read(keyword="バイト").count_this_week >= 4: calendar_suggest(...)
+
+## トリガー（実行タイミング）
+
+DSL 内の実行タイミング指定を trigger として抽出してください:
+- `every day` → trigger: {{"type": "interval", "seconds": 86400}}
+- `every Nh` → trigger: {{"type": "interval", "seconds": N*3600}}
+- `every Nm` → trigger: {{"type": "interval", "seconds": N*60}}
+- `when HH:MM:` → trigger: {{"type": "cron", "hour": HH, "minute": MM}}（毎日その時刻に実行）
+- `when morning:` → trigger: {{"type": "cron", "hour": 8, "minute": 0}}
+- `when evening:` → trigger: {{"type": "cron", "hour": 18, "minute": 0}}
+- 指定なし → trigger: {{"type": "interval", "seconds": 3600}} (デフォルト1時間)
 
 ## 禁止事項
 - import 文の使用禁止
-- ファイルシステムへのアクセス禁止
-- ネットワーク呼び出し禁止（プラグイン関数のみ使用可）
+- ファイルシステム・ネットワークアクセス禁止
 - exec, eval, __import__, open, os, sys の使用禁止
-- 上記のプラグイン関数以外の関数呼び出し禁止
+- 上記の関数ライブラリ以外の関数呼び出し禁止
 
-## 出力形式（JSON のみ — マークダウン不可、説明文不可）
+## 出力形式（JSON のみ — マークダウン不可）
 
-{{"title": "簡潔な日本語説明", "trigger": {{"type": "interval", "seconds": <整数>}}, "code": "<Python コード文字列>"}}
+{{"title": "簡潔な日本語説明", "trigger": {{"type": "interval", "seconds": <整数>}} または {{"type": "cron", "hour": <整数>, "minute": <整数>}}, "code": "<Python コード文字列>"}}
 
 LifeScript が無効、またはサポート外の機能を使用している場合:
 {{"error": "<日本語の説明>"}}
 """
 
-# Compile cache: hash(lifescript_code) → result dict
+# Compile cache
 _cache: dict[str, dict] = {}
 _MAX_CACHE = 128
 
 
 def _build_system_prompt() -> str:
-    """登録済みプラグインからシステムプロンプトを動的に構築する。"""
-    descs = get_descriptions()
     lines = []
-    for name, info in descs.items():
-        lines.append(f"- {info['signature']}  — {info['description']}")
-    functions_section = "\n".join(lines) if lines else "（プラグインが登録されていません）"
-    return _SYSTEM_PROMPT_TEMPLATE.format(functions_section=functions_section)
+    for f in FUNCTION_DESCRIPTIONS:
+        lines.append(f"- `{f['signature']}`  — {f['description']}")
+    functions_section = "\n".join(lines)
+    return _SYSTEM_PROMPT.format(functions_section=functions_section)
 
 
 def _cache_key(code: str) -> str:
@@ -102,7 +113,6 @@ class Compiler:
             raise CompileError(f"LLMが無効なJSONを返しました: {e}\n内容: {content[:300]}") from e
 
     def _validate_result(self, result: dict) -> dict:
-        """コンパイル結果の辞書を検証・正規化する。"""
         if "error" in result:
             raise CompileError(result["error"])
 
@@ -116,18 +126,30 @@ class Compiler:
                 f"triggerは辞書型である必要があります（{type(trigger).__name__}が返されました）"
             )
 
-        if "seconds" not in trigger:
-            raise CompileError("triggerには 'seconds' が必要です")
-        try:
-            result["trigger"]["seconds"] = int(trigger["seconds"])
-        except (TypeError, ValueError) as e:
-            raise CompileError(f"trigger['seconds']は数値である必要があります: {e}") from e
+        trigger_type = trigger.get("type", "interval")
+        if trigger_type == "cron":
+            for field in ("hour", "minute"):
+                if field not in trigger:
+                    raise CompileError(f"cronトリガーには '{field}' が必要です")
+                try:
+                    trigger[field] = int(trigger[field])
+                except (TypeError, ValueError) as e:
+                    raise CompileError(f"trigger['{field}']は数値である必要があります: {e}") from e
+        elif trigger_type == "interval":
+            if "seconds" not in trigger:
+                raise CompileError("intervalトリガーには 'seconds' が必要です")
+            try:
+                trigger["seconds"] = int(trigger["seconds"])
+            except (TypeError, ValueError) as e:
+                raise CompileError(f"trigger['seconds']は数値である必要があります: {e}") from e
+        else:
+            raise CompileError(f"未対応のトリガータイプです: {trigger_type}")
 
         validate_python(result["code"])
         return result
 
     def compile(self, lifescript_code: str) -> dict[str, Any]:
-        """LifeScript を Python にコンパイルする。title, trigger, code を含む辞書を返す。"""
+        """LifeScript を Python にコンパイルする。"""
         key = _cache_key(lifescript_code)
         if key in _cache:
             return _cache[key]
@@ -143,7 +165,6 @@ class Compiler:
         )
         result = self._validate_result(self._parse_response(content))
 
-        # Store in cache (evict oldest if full)
         if len(_cache) >= _MAX_CACHE:
             oldest = next(iter(_cache))
             del _cache[oldest]
@@ -155,7 +176,6 @@ class Compiler:
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
         """実行時エラーが発生した Python を LLM に修正させる。"""
-        # Invalidate cache for this code
         key = _cache_key(lifescript_code)
         _cache.pop(key, None)
 
@@ -177,5 +197,4 @@ class Compiler:
 
     @staticmethod
     def clear_cache() -> None:
-        """コンパイルキャッシュを全消去する。"""
         _cache.clear()

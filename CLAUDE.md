@@ -1,302 +1,431 @@
-# LifeScript 仕様書 v4
+# LifeScript 仕様書
 
-## 1. プロダクト概要
+> HackU Frontier 向け実装仕様  
+> 最終更新: 2026-03-14
+
+---
+
+## 目次
+
+1. [共通仕様](#共通仕様)
+   - [コンセプト](#コンセプト)
+   - [関数ライブラリ（DSLで呼べる関数）](#関数ライブラリdslで呼べる関数)
+   - [DSL仕様例](#dsl仕様例)
+   - [LLMコンパイルフロー](#llmコンパイルフロー)
+   - [データモデル（Supabase）](#データモデルsupabase)
+   - [LLM・インフラ](#llmインフラ)
+2. [スマホ仕様（iOS / SwiftUI）](#スマホ仕様ios--swiftui)
+   - [技術スタック](#技術スタック-ios)
+   - [画面構成](#画面構成-ios)
+   - [オンボーディングフロー](#オンボーディングフロー)
+   - [機能一覧](#機能一覧-ios)
+   - [バックエンドとの通信](#バックエンドとの通信)
+3. [PC仕様（Python / Flet）](#pc仕様python--flet)
+   - [技術スタック](#技術スタック-pc)
+   - [画面構成](#画面構成-pc)
+   - [バックエンド処理フロー](#バックエンド処理フロー)
+   - [モジュール構成](#モジュール構成)
+   - [LiteLLM設定](#litellm設定)
+   - [機能一覧](#機能一覧-pc)
+
+---
+
+## 共通仕様
 
 ### コンセプト
-**「暮らしにコードを書け」**
 
-LifeScriptは、自然言語とPythonの中間に位置する独自のDSL（ドメイン固有言語）です。
-PCでLifeScriptを記述し、LLMがPythonにコンパイルして実行。結果をiPhoneアプリでダッシュボードとして確認する。PCとスマホの両方を使って暮らしを支配するという体験が本プロダクトの核心です。
+**LifeScriptとは**
 
-```
-自然言語（意図） → LifeScript（記述） → Python（実行） → Supabase → iPhoneダッシュボード
-```
+「マシン」という相棒に自分の生活文脈を伝えるためのDSL。ユーザーはルールを書くのではなく、マシンへの文脈を定義する。マシンはその文脈を読み、カレンダーや通知を通じて能動的に動く。関数ライブラリの拡充がそのままプロダクトのロードマップとなる。
 
-### ターゲットユーザー
-- **エンジニア向け**: コードを直接記述して高度なオートメーションを組む
-- **初心者向け**: キーワードボタンでブロック的にLifeScriptを組み立てる
+**リマインドアプリとの差**
 
-### デバイス役割分担
-| デバイス | 役割 |
-|----------|------|
-| PC | LifeScriptの記述・コンパイル・ルール管理 |
-| iPhone | 実行ログ確認・ルール一覧・ON/OFFの切り替え |
-
-### 差別化ポイント
-- **IFTTTとの違い**: IFTTTは「どのサービスを繋ぐか」を人間が知っている必要がある。LifeScriptは「何をしたいか」だけ書けばLLMが実装を考える
-- **単なる自動化との違い**: コンパイラ方式による実行の確実性 + 意図の保持
-- **セキュリティ設計**: ホワイトリスト方式の言語仕様 + サンドボックス実行による堅牢性
-- **体験の設計**: PCで書いてスマホで受け取るという「暮らしを征服する」体験
-
----
-
-## 2. 言語仕様
-
-### 2.1 設計思想
-- **ホワイトリスト方式**: 使えるキーワードを限定することで意図しない挙動を構造的に排除する
-- **コード寄り**: 自由度を下げて実行の確実性を上げる
-- **多言語対応**: LLMを介するため英語・日本語どちらでも記述可能
-- **コンパイル方式**: 記述時に一度だけLLMを呼び出してPythonに変換・保存する
-
-### 2.2 キーワード一覧
-
-#### トリガー系
-| キーワード | 説明 | 例 |
-|------------|------|----|
-| `when` | 条件が満たされたときに発火 | `when fetch(time.now) == "08:00"` |
-| `every` | 定期実行 | `every 1h` / `every day` |
-
-#### データ取得系
-| キーワード | 説明 | 例 |
-|------------|------|----|
-| `fetch(time.now)` | 現在時刻を取得 | `"08:00"` 形式で返す |
-| `fetch(time.today)` | 今日の曜日・日付を取得 | `"Monday"` / `"2024-01-01"` 形式 |
-
-#### 制御系
-| キーワード | 説明 |
-|------------|------|
-| `if` / `else` | 条件分岐 |
-| `and` / `or` / `not` | 論理演算子 |
-| `==` / `!=` / `<` / `>` / `<=` / `>=` | 比較演算子 |
-
-#### アクション系
-| キーワード | 説明 | 例 |
-|------------|------|----|
-| `log("msg")` | 実行ログをSupabaseに記録する | `log("おはようございます")` |
-
-#### 変数系
-| キーワード | 説明 | 例 |
-|------------|------|----|
-| `let` | 変数定義 | `let x = fetch(time.now)` |
-
-#### 繰り返し系
-| キーワード | 説明 | 例 |
-|------------|------|----|
-| `repeat` | n回繰り返し | `repeat 3 { ... }` |
-
-### 2.3 構文例
-
-```javascript
-// 例1: 毎朝8時にログ
-every day {
-  when fetch(time.now) == "08:00" {
-    log("おはようございます")
-  }
-}
-
-// 例2: 変数を使った条件分岐
-let now = fetch(time.now)
-if now >= "09:00" and now <= "18:00" {
-  log("勤務時間内です")
-}
-
-// 例3: 定期実行
-every 1h {
-  log("1時間が経過しました")
-}
-
-// 例4: 繰り返し
-repeat 3 {
-  log("ping")
-}
-```
-
-### 2.4 コンパイルエラーの定義
-以下の場合にコンパイルエラーとして扱う:
-- ホワイトリスト外のキーワードの使用
-- ブロックの未閉じ（`{` に対応する `}` がない）
-- `fetch` の引数が未定義のもの
-- `log` の引数が文字列でない場合
-
----
-
-## 3. アーキテクチャ
-
-### 3.1 全体フロー
+リマインドアプリは人間がルールを考えて設定する。LifeScriptはカレンダーや初回オンボーディングで得た文脈をLLMが解釈し、ユーザーが設定していない行動まで提案・実行する。「毎回話しかけなくていいChatGPT」に近い。
 
 ```
-[PC: Flet デスクトップアプリ]
-  ↓ LifeScriptを記述
-[バックエンド: コンパイラモジュール]
-  ↓ システムプロンプト + LifeScriptをLLMに送信
-[LLM（コンパイラとして動作）]
-  ↓ Pythonコードを生成
-[バックエンド: 静的解析 + バリデーション]
-  ↓ 生成されたPythonをSupabaseに保存
-[APScheduler: スケジューラ]
-  ↓ 定期実行
-[RestrictedPython: サンドボックス実行]
-  ↓ プラグイン経由でSupabaseにログ書き込み
-[Supabase: 共有DB]
-  ↓ リアルタイム同期
-[iPhone: SwiftUIダッシュボード]
-```
+リマインドアプリ   → 人間がルールを考えて、アプリが実行する
+IFTTTなどの自動化  → 人間がトリガーと行動を設定する
 
-### 3.2 エラーハンドリングフロー
-
-```
-[サンドボックス実行]
-  ↓ エラー発生
-[エラーキャッチャー]
-  ↓ エラー内容 + 元のLifeScript + 生成済みPythonをLLMに送信
-[LLM（デバッガとして動作）]
-  ↓ 修正済みPythonを生成
-[静的解析 + バリデーション]
-  ↓ Pythonを上書き保存
-[APScheduler: 再実行]
-```
-
-**LLMを呼ぶのはコンパイル時とエラー時のみ** → トークンコストを最小化
-
-### 3.3 プラグインアーキテクチャ（Loca流用）
-各機能をプラグインとして独立実装する。
-新しいデータソース・アクション追加時はプラグインファイルを追加するだけで拡張可能。
-
-```
-plugins/
-  ├── time_plugin.py       # fetch(time.now) / fetch(time.today)
-  ├── log_plugin.py        # log(...) → Supabaseへ書き込み
-  ├── weather_plugin.py    # fetch(weather.today) ※将来
-  └── calendar_plugin.py  # fetch(calendar.next) ※将来
+LifeScriptの本質  → 人間が「自分の文脈」を渡すと、
+                    LLMが構造化して意味を読み取り、
+                    何をすべきかを判断して動く
 ```
 
 ---
 
-## 4. セキュリティ設計
+### 関数ライブラリ（DSLで呼べる関数）
 
-### 4.1 設計思想
-LLMが生成したPythonコードを`exec()`でそのまま実行するのは危険。
-悪意あるLifeScriptを書かれた場合にシステムへの任意コード実行を許してしまう。
-展示会での「壊しに来るユーザー」への対策としても必須。
+**関数ライブラリの拡充 = LifeScriptのロードマップそのもの。**  
+関数が増えるほどDSLの表現力が上がり、マシンが「世界の変化に反応する」領域へ広がっていく。
 
-### 4.2 二重のセーフティネット
+#### Phase 1 — 今週実装（ハッカソン最低限）
 
-**第一層: 言語仕様レベル（入口）**
-- ホワイトリスト方式のキーワード制限
-- LifeScript記述時点で使える操作を限定する
+| 関数 | シグネチャ | 説明 |
+|---|---|---|
+| `notify()` | `notify(message: str, at?: datetime)` | 指定時刻にアプリ内通知を送る。atを省略した場合は即時実行。traitsのnotify制約（朝8時以降など）を自動適用。 |
+| `calendar.add()` | `calendar.add(title: str, start: datetime, end?: datetime, note?: str)` | Supabaseのcalendar_eventsに新しいイベントを追加。sourceは"machine"または"user"で区別。iOSのカレンダーUIに即時反映。 |
+| `calendar.read()` | `calendar.read(keyword?: str, range?: str) -> list[Event]` | Supabaseからイベントを取得。keyword="バイト"でタイトル絞り込み、range="this_week"で期間指定。count_this_week属性でカウント可。 |
+| `calendar.suggest()` | `calendar.suggest(title: str, on: str, note?: str)` | イベントの提案をmachine_logsに書き込み、iOSのホーム画面に提案カードとして表示。ユーザーが承認するとcalendar.add()が実行される。 |
 
-**第二層: 実行レベル（出口）**
-- `RestrictedPython` による生成コードのサンドボックス実行
-- プラグインのAPI呼び出し以外のコードが含まれていた場合は実行を拒否する
-- ファイルシステムへのアクセス・ネットワーク直接呼び出し・importを禁止する
+#### Phase 2 — ハッカソン当日向け
 
-### 4.3 静的解析フロー
+| 関数 | シグネチャ | 説明 |
+|---|---|---|
+| `user.context()` | `user.context(key?: str) -> dict` | Supabaseのpersonality_jsonから文脈を取得。key指定でピンポイント取得（例: user.context("morning_type")）。LLMへの文脈渡しに使用。 |
+| `streak.count()` | `streak.count(habit_name: str) -> int` | streaksテーブルから指定習慣の継続日数を返す。habit_nameが一致しない場合は0を返す。streak.update()で日次更新。 |
+| `machine.suggest()` | `machine.suggest(message: str, action?: callable)` | マシンキャラクターとしての能動的な提案。machine_logsに記録しiOSに通知。actionを渡すとユーザー承認時に実行される。 |
+
+#### 将来実装
+
+| 関数 | シグネチャ | 説明 |
+|---|---|---|
+| `weather.get()` | `weather.get(location?: str) -> WeatherInfo` | OpenWeatherMap APIから現在の天気・気温を取得。locationを省略するとuser.context("location")を使用。condition属性でrain/sunny等を判定。 |
+| `location.pattern()` | `location.pattern(label: str, radius_m?: int) -> PatternInfo` | 位置情報の滞在パターンを分析。label="バイト先"のような名前付き場所へのアクセス頻度をSupabaseのログから集計。 |
+| `machine.decide()` | `machine.decide(context: dict) -> Action` | 収集した全文脈をLLMに渡し、次の行動を自律判断させる。実行時にLLMを呼び出す唯一の関数。コスト注意。 |
+| `habit.track()` | `habit.track(name: str, done: bool)` | 習慣の完了状況をstreaksテーブルに記録。done=Trueでstreak+1、done=Falseでリセット。streak.count()と組み合わせて使う。 |
+
+---
+
+### DSL仕様例
+
+```yaml
+# 初回オンボーディングで定義されるベース文脈
+traits:
+  朝は弱い → notify() は 8:00 以降
+  バイトの許容は週3まで
+
+# Phase 1: カレンダーベースの自動化
+when calendar.read("バイト").count_this_week >= 4:
+  calendar.suggest("回復タイム", on="next_free_morning")
+
+# Phase 2: 文脈を読んだ能動的提案
+when streak.count("運動") >= 7:
+  machine.suggest("1週間継続！次の目標を設定しようか？")
+
+# 将来: 外部状態トリガー
+when weather.get().condition == "rain" and time == "morning":
+  notify("傘を持って")
 ```
-LLMがPythonを生成
-　↓
-静的解析（ホワイトリスト外の操作が含まれていないか検証）
-　↓ 検証NG
-実行拒否 + LifeScriptErrorを返す
-　↓ 検証OK
-RestrictedPython環境で実行
+
+**設計の核心**
+
+```
+浅い記述  → マシンが基本的に動く
+深い記述  → マシンがより文脈を理解して動く
+```
+
+書けば書くほどマシンが賢くなる正のフィードバックループを設計する。
+ユーザーは関数名を正確に覚えなくてもよい。LLMがコンパイル時に自然言語から変換する。
+
+---
+
+### LLMコンパイルフロー
+
+```
+DSL文字列
+  ↓
+LiteLLM（gemini-2.5-flash）
+  ↓
+Pythonコード生成
+  ↓
+RestrictedPython（検証・サンドボックス）
+  ↓
+APScheduler（ジョブ登録）
+```
+
+> **重要**: compile時のみLLM呼び出し。実行時はLLMを使用しない → コスト最小化
+
+---
+
+### データモデル（Supabase）
+
+| テーブル | 主なカラム | 用途 |
+|---|---|---|
+| `users` | id, email, personality_json | ユーザー情報・オンボーディング結果 |
+| `scripts` | id, user_id, dsl_text, compiled_python, active | LifeScriptのルール管理 |
+| `calendar_events` | id, user_id, title, start_at, end_at, source | イベント蓄積（自前カレンダーのソース） |
+| `machine_logs` | id, user_id, action_type, content, triggered_at | マシンの行動履歴・提案ログ |
+| `streaks` | id, user_id, habit_name, count, last_date | 継続カウント管理 |
+
+---
+
+### LLM・インフラ
+
+| 項目 | 内容 |
+|---|---|
+| LLMモデル（開発） | `gemini/gemini-2.5-flash`（Google AI Studio無料枠） |
+| LLMモデル（当日） | `gemini/gemini-2.5-pro`（GCP $300クレジット） |
+| LLM呼び出しタイミング | DSLコンパイル時のみ・実行時は不使用 |
+| フォールバック | `openrouter/google/gemini-2.0-flash-exp:free` |
+| DB | Supabase（開発用共有アカウント） |
+| APIキー管理 | `.env` / `.gitignore`（publicリポジトリ注意） |
+
+---
+
+## スマホ仕様（iOS / SwiftUI）
+
+### 技術スタック (iOS)
+
+- **SwiftUI** — UI全体
+- **Supabase Swift SDK** — DB・認証
+- EventKit **不使用** — カレンダーはSupabaseから取得する自前実装
+- CoreLocation — Phase 2以降で検討
+- 認証 — Supabase Email/Password または匿名認証
+
+**設計方針**: カレンダーはSupabaseから取得する自前実装。外部カレンダー連携（EventKit）は行わず、LifeScript内のカレンダーが唯一の真実。これによりOS側との同期問題を排除し、マシンが管理するカレンダーがソースとなる。
+
+---
+
+### 画面構成 (iOS)
+
+#### ホーム画面
+今日・今週の文脈を可視化。マシンの提案を表示。
+
+- 自前カレンダーUI（月/週表示）
+- イベント追加ボタン
+- マシンからの提案カード
+- 今日のイベント一覧
+- streak表示（習慣継続日数）
+
+#### ダッシュボード
+マシンが読み取っている文脈の透明性を確保。
+
+- 今週のカレンダー集計
+- マシンの認識サマリ
+- 過去の提案・行動ログ
+- personality設定の確認
+
+#### IDE画面
+DSLを書く・編集する場所。書くほどマシンが賢くなる体験。
+
+- DSLテキストエディタ
+- コンパイルボタン（LLM呼び出し）
+- コンパイル結果表示
+- 関数リファレンス一覧
+- エラー表示
+
+---
+
+### オンボーディングフロー
+
+```
+初回起動
+  ↓
+マシンの紹介画面（キャラクター説明）
+  ↓
+パーソナリティ入力（一度だけ）
+  ↓
+ホーム画面
+```
+
+**パーソナリティ入力（一度だけ）**
+
+朝型/夜型・バイトや授業の大まかな頻度・集中できる時間帯・苦手なことなどを入力。  
+これがSupabaseの `users.personality_json` に保存され、マシンの文脈の起点になる。  
+毎日入力させる日記とは全く異なる体験——最初に少しだけ自分を教えたら、あとは勝手に育つ。
+
+---
+
+### 機能一覧 (iOS)
+
+| 機能 | 優先度 | 備考 |
+|---|---|---|
+| 自前カレンダーUI（月表示） | **必須** | ホーム画面の中核 |
+| イベントCRUD | **必須** | Supabase calendar_eventsと同期 |
+| マシン提案カード表示 | **必須** | machine_logsから取得 |
+| DSLエディタ + コンパイル | **必須** | バックエンドAPIを叩く |
+| オンボーディング画面 | **必須** | personality_json保存 |
+| ダッシュボード（集計） | 欲しい | 文脈の透明性 |
+| 週表示カレンダー | 欲しい | 月表示が完成後 |
+| streak表示 | 欲しい | streaksテーブルから |
+| 関数リファレンス | 将来 | IDE画面内 |
+
+---
+
+### バックエンドとの通信
+
+SwiftUIからSupabaseへの直接アクセス（CRUD）と、コンパイル・スケジューラ登録はPythonバックエンドへのREST呼び出しで分離する。
+
+```
+コンパイルエンドポイント:
+  POST /compile
+  Body: { dsl_text: string }
+  Response: { compiled_python: string, error?: string }
 ```
 
 ---
 
-## 5. コンポーネント詳細
+## PC仕様（Python / Flet）
 
-### 5.1 コンパイラモジュール（Python）
-- LifeScriptを受け取りLLMに投げてPythonを生成する
-- システムプロンプトに「LifeScriptの言語仕様」「使用可能なプラグインAPI」「出力フォーマット」を定義する
-- 生成されたPythonを静的解析・バリデーション後にSupabaseに保存する
+### 技術スタック (PC)
 
-### 5.2 スケジューラ（APScheduler）
-- `every` キーワードを解析してジョブを登録する
-- `when` キーワードは条件チェックの定期ポーリングとして登録する
-- アプリ起動時にSupabaseから全ルールを読み込んでジョブを再登録する
+- **Python** — バックエンド全体
+- **Flet** — デモ・開発用PCのUI
+- **APScheduler** — コンパイル済みPythonのスケジュール実行
+- **LiteLLM** — LLM呼び出しの抽象化
+- **RestrictedPython** — サンドボックス実行
+- **Supabase Python SDK** — DB操作
 
-### 5.3 Flet デスクトップアプリ（PC）
-- PythonでそのままUIを記述できるためバックエンドとの統合がシームレス
-- コードエディタ風のテキスト入力エリア
-- コンパイルボタン・実行ボタン・停止ボタン
-- **初心者向けキーワードボタン群**: `when` / `every` / `if` / `log` / `fetch` などをボタンで呼び出してエディタに挿入する
-- 有効なルール一覧パネル
-- コンパイルエラー・実行ログ表示パネル
-
-### 5.4 SwiftUIダッシュボード（iPhone）
-- Supabaseからルール一覧・実行ログを取得して表示する
-- ルールのON/OFF切り替え（Supabaseの`status`カラムを更新）
-- 実行ログのタイムライン表示
-- **読み取りメイン、最小限の書き込みのみ**
-
-### 5.5 データベース（Supabase）
-| テーブル | カラム | 説明 |
-|----------|--------|------|
-| `rules` | id, title, lifescript_code, compiled_python, status, created_at | LifeScriptルールの保存 |
-| `logs` | id, rule_id, message, executed_at, result, error_message | 実行ログ |
+**設計方針**: Flet UIはデモ・開発用のPC画面として機能。APSchedulerがコンパイル済みPythonをスケジュール実行。実行時はLLMを呼ばずPythonを直接実行。RestrictedPythonでサンドボックス化。
 
 ---
 
-## 6. MVPスコープ
+### 画面構成 (PC)
 
-### フェーズ1（最優先・まず動くものを作る）
-- [ ] LifeScriptのコアキーワード全実装
-- [ ] LLMによるコンパイル（LifeScript → Python）
-- [ ] `fetch(time.now)` / `fetch(time.today)` の実装
-- [ ] `log()` の実装（Supabaseへの書き込み）
-- [ ] APSchedulerによるスケジューリング
-- [ ] Flet基本UI（エディタ + ログパネル）
-- [ ] Supabaseでのルール保存・読み込み
+#### ホーム画面
+カレンダーとマシンの状態をPC上で確認。
 
-### フェーズ2（堅牢にする）
-- [ ] RestrictedPythonによるサンドボックス実行
-- [ ] 静的解析によるホワイトリスト検証
-- [ ] エラー時のLLM再コンパイル
+- カレンダー表示（Supabaseから）
+- マシンの最新提案
+- 現在稼働中のルール一覧
+- ジョブ実行ログ
 
-### フェーズ3（展示会に向けて）
-- [ ] SwiftUIダッシュボードアプリ（iPhone）
-- [ ] 初心者向けキーワードボタン
-- [ ] UIの見た目のブラッシュアップ
-- [ ] デモ用サンプルLifeScript作成
+#### IDE画面
+DSL記述・コンパイル・スケジューラ登録の中核。
 
-### 将来（ロードマップとして語る）
-- `fetch(weather.today)` / `fetch(calendar.next)` などのプラグイン追加
-- スマホからのデータ取得（歩数・位置情報・バッテリー）をLifeScriptの変数として使う
-- コミュニティによるプラグイン共有
+- DSLテキストエディタ
+- コンパイルボタン
+- 生成Pythonコードのプレビュー
+- スケジューラへの登録ボタン
+- エラー・警告表示
 
----
+#### ダッシュボード
+マシンが持っている文脈の全体像を可視化。
 
-## 7. 技術スタック
-
-### PC バックエンド
-- **言語**: Python
-- **LLMクライアント**: LiteLLM（モデル抽象化）
-- **開発初期モデル**: ローカルLLM（Qwen2.5-Coder）
-- **本番モデル**: GPT-4o mini → 動作確認後に決定
-- **スケジューラ**: APScheduler
-- **サンドボックス**: RestrictedPython
-- **DBクライアント**: supabase-py
-
-### PC フロントエンド
-- **UIフレームワーク**: Flet（PythonでFlutterライクなデスクトップアプリを構築）
-
-### iPhone アプリ
-- **言語**: Swift
-- **UIフレームワーク**: SwiftUI
-- **DBクライアント**: supabase-swift
-- **対応**: iOSのみ（開発者・デモともにiPhoneユーザーのため）
-
-### インフラ・外部サービス
-- **データベース**: Supabase（PostgreSQL）
-- **MCPプロトコル**: MCP Python SDK
-
-### 開発環境
-- **パッケージ管理**: uv
-- **OS**: macOS
+- personality_json表示
+- 今週のカレンダー集計
+- streak一覧
+- machine_logs履歴
+- LLMコスト概算
 
 ---
 
-## 8. チーム分担案
+### バックエンド処理フロー
 
-| タスク | 担当 |
-|--------|------|
-| バックエンド全般・コンパイラ設計 | Kanade |
-| プラグインアーキテクチャ | Kanade |
-| APScheduler実装 | Kanade |
-| Supabase設計・接続 | Kanade |
-| セキュリティ設計（RestrictedPython・静的解析） | Kanade |
-| Flet UI骨格 | Kanade |
-| SwiftUI ダッシュボード骨格 | Kanade |
-| UIスタイリング・キーワードボタン | メンバー |
-| デモ用サンプルLifeScript作成 | メンバー |
-| プレゼン資料補助 | メンバー |
+**コンパイルフロー**
+```
+DSL入力
+  ↓
+compiler.py（LiteLLM呼び出し）
+  ↓
+compiled_python
+  ↓
+validator.py（RestrictedPython）
+  ↓
+scheduler.py（APScheduler登録）
+```
+
+**実行フロー**
+```
+トリガー発火
+  ↓
+関数ライブラリ呼び出し
+  ↓
+Supabase更新
+  ↓
+iOSへ通知（DB経由ポーリング または プッシュ）
+```
+
+---
+
+### モジュール構成
+
+| ファイル | 責務 | 優先度 |
+|---|---|---|
+| `compiler.py` | DSL文字列 → Python変換（LiteLLM呼び出し） | **必須** |
+| `validator.py` | RestrictedPythonによるサンドボックス検証 | **必須** |
+| `scheduler.py` | APSchedulerジョブ管理・登録・削除 | **必須** |
+| `functions/notify.py` | `notify()` の実装 | **必須** |
+| `functions/calendar.py` | `calendar.*` の実装（Supabase CRUD） | **必須** |
+| `api.py` | iOSから叩くREST APIエンドポイント | **必須** |
+| `functions/machine.py` | `machine.suggest()` ・machine_logs書き込み | 欲しい |
+| `functions/streak.py` | `streak.count()` の実装 | 欲しい |
+| `context_builder.py` | Supabaseから文脈を構築してLLMに渡す | 欲しい |
+| `functions/weather.py` | `weather.get()`（OpenWeatherMap） | 将来 |
+
+---
+
+### LiteLLM設定
+
+```yaml
+# litellm_config.yaml
+model_list:
+  - model_name: lifescript-compiler
+    litellm_params:
+      model: gemini/gemini-2.5-flash  # 開発中
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: lifescript-compiler   # フォールバック
+    litellm_params:
+      model: openrouter/google/gemini-2.0-flash-exp:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+router_settings:
+  routing_strategy: "fallback"
+  num_retries: 2
+```
+
+**.env構成**
+
+```bash
+# 開発中
+LIFESCRIPT_MODEL=gemini/gemini-2.5-flash
+GEMINI_API_KEY=your_free_key
+
+# ハッカソン当日（前日に切替）
+LIFESCRIPT_MODEL=gemini/gemini-2.5-pro
+GEMINI_API_KEY=your_paid_key
+
+# フォールバック
+OPENROUTER_API_KEY=your_openrouter_key
+```
+
+> **注意**: `kanade73/LifeScript` はpublicリポジトリのため `.env` を必ず `.gitignore` に追加すること。
+
+---
+
+### 機能一覧 (PC)
+
+| 機能 | 優先度 | 備考 |
+|---|---|---|
+| DSLコンパイル（LLM） | **必須** | compiler.py中核機能 |
+| RestrictedPython検証 | **必須** | セキュリティ必須 |
+| APSchedulerジョブ登録 | **必須** | scheduler.py |
+| `calendar.*` 関数群 | **必須** | Supabase連携 |
+| REST APIエンドポイント | **必須** | iOS向け `/compile` |
+| IDE画面（Flet） | **必須** | デモ用 |
+| `context_builder` | 欲しい | マシンの能動提案に必要 |
+| `machine.suggest()` | 欲しい | デモの見栄え |
+| ダッシュボード（Flet） | 欲しい | 文脈の可視化 |
+| `weather.get()` | 将来 | 外部状態トリガー |
+
+---
+
+## ロードマップ
+
+### Phase 1（今週）— カレンダー中心設計
+
+- [ ] カレンダーUIをホーム画面に実装（自前）
+- [ ] イベントをSupabaseに蓄積
+- [ ] リマインドはカレンダーイベントから生成に変更
+- [ ] `calendar.add()` / `calendar.read()` / `calendar.suggest()` 実装
+- [ ] REST API `/compile` エンドポイント
+
+> **成功条件**: 「バイトが週4入ってるね」という提案がmachine_logsに書き込まれ、iOSに表示されること。
+
+### Phase 2（ハッカソン当日向け）— マシンとの対話
+
+- [ ] 初回オンボーディング（パーソナリティ入力）
+- [ ] マシンキャラクター設定
+- [ ] `user.context()` / `streak.count()` / `machine.suggest()` 実装
+- [ ] `context_builder.py` — 文脈をLLMに渡す仕組み
+- [ ] 能動的な提案デモシーン（「休息を追加しようか？」）
+
+> **成功条件**: ユーザーが何も設定していないのに、マシンが文脈を読んで能動的に提案してくること。
+
+### 将来ロードマップ — 関数ライブラリの拡充
+
+- [ ] `weather.get()` — 外部状態トリガー
+- [ ] `location.pattern()` — 位置情報パターン認識
+- [ ] `machine.decide()` — マシンへの完全委譲
+- [ ] `habit.track()` — 習慣トラッキング

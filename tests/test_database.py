@@ -1,16 +1,16 @@
-"""Tests for the database client."""
+"""データベースクライアントのテスト。"""
 
-from __future__ import annotations
-
-from unittest.mock import patch
-
+import os
 import pytest
 
 from lifescript.database.client import DatabaseClient
 
 
-@pytest.fixture()
+@pytest.fixture
 def db(tmp_path):
+    from unittest.mock import patch
+    old_url = os.environ.pop("SUPABASE_URL", None)
+    old_key = os.environ.pop("SUPABASE_ANON_KEY", None)
     db_path = tmp_path / "test.db"
     client = DatabaseClient()
     with (
@@ -19,82 +19,60 @@ def db(tmp_path):
     ):
         client.connect()
         yield client
+    if old_url:
+        os.environ["SUPABASE_URL"] = old_url
+    if old_key:
+        os.environ["SUPABASE_ANON_KEY"] = old_key
 
 
-class TestRules:
-    def test_save_and_get_rule(self, db):
-        rule = db.save_rule(
-            title="test",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-            trigger_seconds=60,
-        )
-        assert rule["title"] == "test"
-        assert rule["trigger_seconds"] == 60
+class TestDatabaseClient:
+    def test_connect(self, db):
+        assert db.is_connected
+        assert not db.is_supabase
 
-        rules = db.get_rules()
-        assert len(rules) == 1
-        assert rules[0]["id"] == rule["id"]
+    def test_script_crud(self, db):
+        script = db.save_script(dsl_text="test dsl", compiled_python="x = 1")
+        assert script["dsl_text"] == "test dsl"
 
-    def test_delete_rule(self, db):
-        rule = db.save_rule(
-            title="to delete",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-        )
-        db.delete_rule(str(rule["id"]))
-        rules = db.get_rules()
-        assert len(rules) == 0
+        scripts = db.get_scripts()
+        assert any(s["id"] == script["id"] for s in scripts)
 
-    def test_update_rule_status(self, db):
-        rule = db.save_rule(
-            title="pausable",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-        )
-        db.update_rule_status(str(rule["id"]), "paused")
-        # get_rules only returns active
-        assert len(db.get_rules()) == 0
+        fetched = db.get_script_by_id(script["id"])
+        assert fetched["compiled_python"] == "x = 1"
 
-    def test_get_rule_by_id(self, db):
-        rule = db.save_rule(
-            title="findme",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-        )
-        found = db.get_rule_by_id(rule["id"])
-        assert found["title"] == "findme"
+        db.update_script(script["id"], compiled_python="x = 2")
+        fetched2 = db.get_script_by_id(script["id"])
+        assert fetched2["compiled_python"] == "x = 2"
 
-    def test_get_rule_by_id_not_found(self, db):
-        with pytest.raises(RuntimeError, match="見つかりません"):
-            db.get_rule_by_id(99999)
+        db.delete_script(script["id"])
+        scripts2 = db.get_scripts()
+        assert not any(s["id"] == script["id"] for s in scripts2)
 
-    def test_update_rule_python(self, db):
-        rule = db.save_rule(
-            title="update test",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-        )
-        db.update_rule_python(str(rule["id"]), "x = 2")
-        updated = db.get_rule_by_id(rule["id"])
-        assert updated["compiled_python"] == "x = 2"
+    def test_event_crud(self, db):
+        event = db.add_event(title="Meeting", start_at="2025-01-01T10:00:00+00:00")
+        assert event["title"] == "Meeting"
 
+        events = db.get_events()
+        assert any(e["id"] == event["id"] for e in events)
 
-class TestLogs:
-    def test_save_and_get_logs(self, db):
-        db.save_log(rule_id="1", message="hello", result="success")
-        db.save_log(rule_id="1", message="fail", result="error", error_message="boom")
-        logs = db.get_logs("1")
-        assert len(logs) == 2
+        events_filtered = db.get_events(keyword="Meet")
+        assert len(events_filtered) >= 1
 
-    def test_get_logs_all(self, db):
-        db.save_log(rule_id="1", message="a", result="success")
-        db.save_log(rule_id="2", message="b", result="success")
-        logs = db.get_logs()
-        assert len(logs) == 2
+        db.delete_event(event["id"])
 
-    def test_log_limit(self, db):
-        for i in range(10):
-            db.save_log(rule_id="1", message=f"run {i}", result="success")
-        logs = db.get_logs("1", limit=5)
-        assert len(logs) == 5
+    def test_machine_log(self, db):
+        log_entry = db.add_machine_log(action_type="notify", content="test message")
+        assert log_entry["action_type"] == "notify"
+
+        logs = db.get_machine_logs()
+        assert any(entry["id"] == log_entry["id"] for entry in logs)
+
+    def test_streak(self, db):
+        count = db.get_streak("exercise")
+        assert count == 0
+
+        db.update_streak("exercise", 5)
+        assert db.get_streak("exercise") == 5
+
+        db.update_streak("exercise", 10)
+        assert db.get_streak("exercise") == 10

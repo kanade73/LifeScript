@@ -1,14 +1,13 @@
-"""APScheduler ベースのジョブ管理 — LifeScript ルールの定期実行を制御する。
+"""APScheduler ベースのジョブ管理 — コンパイル済み Python をスケジュール実行する。
 
-DB からルールを読み込み、interval/cron トリガーで APScheduler に登録。
-実行時はサンドボックス経由で Python コードを実行し、エラー時は LLM で再コンパイルを試みる。
+実行時は LLM を使用しない。エラー時のみ LLM で再コンパイルを試みる。
 """
 
 from __future__ import annotations
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from ..sandbox.runner import run_sandboxed, reset_rate_limits
 from ..compiler.compiler import Compiler
@@ -21,7 +20,9 @@ class LifeScriptScheduler:
     def __init__(self, compiler: Compiler) -> None:
         self._scheduler = BackgroundScheduler(timezone="UTC")
         self._compiler = compiler
-        self._job_map: dict[str, str] = {}  # rule_id → apscheduler job_id
+        self._job_map: dict[str, str] = {}  # script_id → apscheduler job_id
+        self._trigger_map: dict[str, dict] = {}  # script_id → trigger dict
+        self._paused: set[str] = set()  # paused script IDs
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -29,7 +30,6 @@ class LifeScriptScheduler:
     def start(self) -> None:
         if not self._scheduler.running:
             self._scheduler.start()
-            # Reset rate limits every 60 seconds
             self._scheduler.add_job(
                 reset_rate_limits,
                 trigger=IntervalTrigger(seconds=60),
@@ -46,100 +46,82 @@ class LifeScriptScheduler:
         return self._scheduler.running
 
     # ------------------------------------------------------------------
-    # Rule management
+    # Script management
     # ------------------------------------------------------------------
     def load_from_db(self) -> None:
-        """DB から全アクティブルールを読み込み、スケジューラに登録する。"""
+        """DB から全アクティブスクリプトを読み込み、スケジューラに登録する。"""
         try:
-            rules = db_client.get_rules()
-            for rule in rules:
-                self.add_rule(rule)
-            log_queue.log("Scheduler", f"DBから{len(rules)}件のルールを読み込みました")
+            scripts = db_client.get_scripts()
+            for script in scripts:
+                if script.get("compiled_python"):
+                    self.add_script(script)
+            log_queue.log("Scheduler", f"DBから{len(scripts)}件のスクリプトを読み込みました")
         except Exception as e:
-            log_queue.log("Scheduler", f"ルールの読み込みに失敗しました: {e}", "ERROR")
+            log_queue.log("Scheduler", f"スクリプトの読み込みに失敗しました: {e}", "ERROR")
 
-    def add_rule(self, rule: dict) -> None:
-        rule_id = str(rule["id"])
-        title = rule.get("title", rule_id)
-        python_code = rule["compiled_python"]
-        lifescript_code = rule.get("lifescript_code", "")
+    def add_script(self, script: dict, trigger_seconds: int = 3600, trigger: dict | None = None) -> None:
+        """スクリプトをスケジューラに登録する。"""
+        script_id = str(script["id"])
+        python_code = script["compiled_python"]
+        dsl_text = script.get("dsl_text", "")
 
-        job_id = f"rule_{rule_id}"
+        job_id = f"script_{script_id}"
 
-        # Build trigger from rule data
-        trigger = self._build_trigger(rule)
-        trigger_desc = self._describe_trigger(rule)
+        def job(sid=script_id, code=python_code, dsl=dsl_text) -> None:
+            self._run_script(sid, code, dsl)
 
-        def job(
-            rid=rule_id,
-            t=title,
-            code=python_code,
-            ls=lifescript_code,
-        ) -> None:
-            self._run_rule(rid, t, code, ls)
+        if trigger and trigger.get("type") == "cron":
+            ap_trigger = CronTrigger(hour=trigger["hour"], minute=trigger["minute"])
+            desc = f"毎日 {trigger['hour']:02d}:{trigger['minute']:02d}"
+        else:
+            seconds = trigger["seconds"] if trigger and "seconds" in trigger else trigger_seconds
+            ap_trigger = IntervalTrigger(seconds=seconds)
+            desc = self._describe_interval(seconds)
 
         self._scheduler.add_job(
             job,
-            trigger=trigger,
+            trigger=ap_trigger,
             id=job_id,
             replace_existing=True,
             misfire_grace_time=30,
         )
-        self._job_map[rule_id] = job_id
-        log_queue.log("Scheduler", f"'{title}' を登録しました ({trigger_desc})")
+        self._job_map[script_id] = job_id
+        # Store trigger info for later retrieval
+        if trigger:
+            self._trigger_map[script_id] = trigger
+        else:
+            self._trigger_map[script_id] = {"type": "interval", "seconds": trigger_seconds}
+        self._paused.discard(script_id)
 
-    def _build_trigger(self, rule: dict) -> IntervalTrigger | CronTrigger:
-        """ルール辞書から APScheduler のトリガーを構築する。"""
-        trigger_type = rule.get("trigger_type", "interval")
-
-        if trigger_type == "cron":
-            cron_kwargs: dict = {}
-            for key in ("minute", "hour", "day_of_week", "day", "month"):
-                val = rule.get(f"cron_{key}")
-                if val is not None and val != "":
-                    cron_kwargs[key] = val
-            # Defaults
-            cron_kwargs.setdefault("minute", 0)
-            cron_kwargs.setdefault("hour", 0)
-            return CronTrigger(**cron_kwargs)
-
-        # Default: interval trigger
-        trigger_seconds = int(rule.get("trigger_seconds", 60))
-        return IntervalTrigger(seconds=trigger_seconds)
+        log_queue.log("Scheduler", f"スクリプト#{script_id} を登録 ({desc})")
 
     @staticmethod
-    def _describe_trigger(rule: dict) -> str:
-        trigger_type = rule.get("trigger_type", "interval")
-        if trigger_type == "cron":
-            parts = []
-            for key in ("minute", "hour", "day_of_week", "day", "month"):
-                val = rule.get(f"cron_{key}")
-                if val is not None and val != "":
-                    parts.append(f"{key}={val}")
-            return "cron: " + ", ".join(parts) if parts else "cron"
+    def _describe_interval(seconds: int) -> str:
+        if seconds >= 86400:
+            return f"{seconds // 86400}日ごと"
+        if seconds >= 3600:
+            return f"{seconds // 3600}時間ごと"
+        if seconds >= 60:
+            return f"{seconds // 60}分ごと"
+        return f"{seconds}秒ごと"
 
-        secs = int(rule.get("trigger_seconds", 60))
-        if secs >= 86400:
-            return f"{secs // 86400}日ごと"
-        if secs >= 3600:
-            return f"{secs // 3600}時間ごと"
-        if secs >= 60:
-            return f"{secs // 60}分ごと"
-        return f"{secs}秒ごと"
-
-    def remove_rule(self, rule_id: str) -> None:
-        job_id = self._job_map.pop(str(rule_id), None)
+    def remove_script(self, script_id: str) -> None:
+        script_id = str(script_id)
+        job_id = self._job_map.pop(script_id, None)
         if job_id:
             try:
                 self._scheduler.remove_job(job_id)
             except Exception:
                 pass
+        self._trigger_map.pop(script_id, None)
+        self._paused.discard(script_id)
 
     def remove_all(self) -> None:
         self._scheduler.remove_all_jobs()
         self._job_map.clear()
+        self._trigger_map.clear()
+        self._paused.clear()
         log_queue.log("Scheduler", "全ジョブを停止しました")
-        # Re-add rate limit reset if scheduler is running
         if self._scheduler.running:
             self._scheduler.add_job(
                 reset_rate_limits,
@@ -151,66 +133,79 @@ class LifeScriptScheduler:
     def get_active_ids(self) -> list[str]:
         return list(self._job_map.keys())
 
-    # ------------------------------------------------------------------
-    # Rule enable/disable
-    # ------------------------------------------------------------------
-    def pause_rule(self, rule_id: str) -> None:
-        """ルールを一時停止する（スケジューラから除去し、DB ステータスを 'paused' に更新）。"""
-        self.remove_rule(rule_id)
-        db_client.update_rule_status(str(rule_id), "paused")
-        log_queue.log("Scheduler", f"ルール {rule_id} を一時停止しました")
+    def get_trigger_info(self, script_id: str) -> dict:
+        """スクリプトのトリガー情報を返す。"""
+        return self._trigger_map.get(str(script_id), {"type": "interval", "seconds": 3600})
 
-    def resume_rule(self, rule_id: str) -> None:
-        """一時停止中のルールを再開する。"""
-        db_client.update_rule_status(str(rule_id), "active")
-        rule = db_client.get_rule_by_id(int(rule_id))
-        if rule:
-            self.add_rule(rule)
-            log_queue.log("Scheduler", f"ルール {rule_id} を再開しました")
+    def is_paused(self, script_id: str) -> bool:
+        return str(script_id) in self._paused
+
+    def pause_script(self, script_id: str) -> None:
+        """スクリプトを一時停止（スケジューラから外すがトリガー情報は保持）。"""
+        script_id = str(script_id)
+        job_id = self._job_map.pop(script_id, None)
+        if job_id:
+            try:
+                self._scheduler.remove_job(job_id)
+            except Exception:
+                pass
+        self._paused.add(script_id)
+        log_queue.log("Scheduler", f"スクリプト#{script_id} を一時停止しました")
+
+    def resume_script(self, script_id: str, script: dict) -> None:
+        """一時停止中のスクリプトを再開する。"""
+        script_id = str(script_id)
+        trigger = self._trigger_map.get(script_id, {"type": "interval", "seconds": 3600})
+        self.add_script(script, trigger=trigger)
+        self._paused.discard(script_id)
+        log_queue.log("Scheduler", f"スクリプト#{script_id} を再開しました")
+
+    def update_trigger(self, script_id: str, script: dict, trigger: dict) -> None:
+        """スクリプトのトリガーを更新する。"""
+        script_id = str(script_id)
+        self._trigger_map[script_id] = trigger
+        if script_id not in self._paused:
+            self.add_script(script, trigger=trigger)
+
+    def describe_trigger(self, trigger: dict) -> str:
+        """トリガーの説明文を返す。"""
+        if trigger.get("type") == "cron":
+            return f"毎日 {trigger.get('hour', 0):02d}:{trigger.get('minute', 0):02d}"
+        seconds = trigger.get("seconds", 3600)
+        return self._describe_interval(seconds)
 
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
-    def _run_rule(self, rule_id: str, title: str, python_code: str, lifescript_code: str) -> None:
+    def _run_script(self, script_id: str, python_code: str, dsl_text: str) -> None:
         try:
-            run_sandboxed(python_code, rule_id=rule_id)
-            log_queue.log(title, "OK")
+            run_sandboxed(python_code, rule_id=script_id)
+            log_queue.log(f"Script#{script_id}", "OK")
         except SandboxError as e:
             error_msg = str(e)
-            log_queue.log(title, f"エラー: {error_msg}", "ERROR")
-            db_client.save_log(
-                rule_id=rule_id, message=title, result="error", error_message=error_msg
+            log_queue.log(f"Script#{script_id}", f"エラー: {error_msg}", "ERROR")
+            db_client.add_machine_log(
+                action_type="script_error",
+                content=f"Script#{script_id}: {error_msg}",
             )
-            self._try_recompile(rule_id, title, lifescript_code, python_code, error_msg)
+            self._try_recompile(script_id, dsl_text, python_code, error_msg)
 
     def _try_recompile(
-        self,
-        rule_id: str,
-        title: str,
-        lifescript_code: str,
-        old_python: str,
-        error: str,
+        self, script_id: str, dsl_text: str, old_python: str, error: str
     ) -> None:
-        if not lifescript_code:
+        if not dsl_text:
             return
         try:
-            log_queue.log(title, "LLMによる再コンパイルを試行中…", "WARN")
-            result = self._compiler.recompile_with_error(lifescript_code, old_python, error)
+            log_queue.log(f"Script#{script_id}", "LLMによる再コンパイルを試行中…", "WARN")
+            result = self._compiler.recompile_with_error(dsl_text, old_python, error)
             new_python = result["code"]
-            db_client.update_rule_python(rule_id, new_python)
+            db_client.update_script(int(script_id), compiled_python=new_python)
 
-            trigger_seconds = int(result.get("trigger", {}).get("seconds", 60))
-
-            rule = {
-                "id": rule_id,
-                "title": title,
-                "compiled_python": new_python,
-                "lifescript_code": lifescript_code,
-                "trigger_seconds": trigger_seconds,
-            }
-            self.add_rule(rule)
-            log_queue.log(title, "再コンパイルに成功しました")
+            trigger_dict = result.get("trigger", {"type": "interval", "seconds": 3600})
+            script = {"id": script_id, "compiled_python": new_python, "dsl_text": dsl_text}
+            self.add_script(script, trigger=trigger_dict)
+            log_queue.log(f"Script#{script_id}", "再コンパイルに成功しました")
         except CompileError as e:
-            log_queue.log(title, f"再コンパイルに失敗しました: {e}", "ERROR")
+            log_queue.log(f"Script#{script_id}", f"再コンパイルに失敗: {e}", "ERROR")
         except Exception as e:
-            log_queue.log(title, f"再コンパイルエラー ({type(e).__name__}): {e}", "ERROR")
+            log_queue.log(f"Script#{script_id}", f"再コンパイルエラー: {e}", "ERROR")

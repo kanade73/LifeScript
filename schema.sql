@@ -1,21 +1,45 @@
--- LifeScript Database Schema
--- Used for both Supabase (PostgreSQL) and SQLite fallback
+-- LifeScript Database Schema (v2)
+-- Supabase (PostgreSQL) 用。SQLiteフォールバックは database/client.py 内で定義。
 
-CREATE TABLE IF NOT EXISTS rules (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    title           TEXT    NOT NULL,
-    lifescript_code TEXT    NOT NULL,
-    compiled_python TEXT    NOT NULL,
-    trigger_seconds INTEGER NOT NULL DEFAULT 60,
-    status          TEXT    NOT NULL DEFAULT 'active',
-    created_at      TEXT    NOT NULL
+CREATE TABLE IF NOT EXISTS users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           TEXT UNIQUE NOT NULL,
+    personality_json JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS logs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    rule_id       TEXT,
-    message       TEXT    NOT NULL DEFAULT '',
-    executed_at   TEXT    NOT NULL,
-    result        TEXT    NOT NULL DEFAULT 'success',
-    error_message TEXT    NOT NULL DEFAULT ''
+CREATE TABLE IF NOT EXISTS scripts (
+    id              SERIAL PRIMARY KEY,
+    user_id         UUID REFERENCES users(id),
+    dsl_text        TEXT NOT NULL,
+    compiled_python TEXT DEFAULT '',
+    active          BOOLEAN DEFAULT true,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id              SERIAL PRIMARY KEY,
+    user_id         UUID REFERENCES users(id),
+    title           TEXT NOT NULL,
+    start_at        TIMESTAMPTZ NOT NULL,
+    end_at          TIMESTAMPTZ,
+    note            TEXT DEFAULT '',
+    source          TEXT NOT NULL DEFAULT 'user',
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS machine_logs (
+    id              SERIAL PRIMARY KEY,
+    user_id         UUID REFERENCES users(id),
+    action_type     TEXT NOT NULL,
+    content         TEXT NOT NULL DEFAULT '',
+    triggered_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS streaks (
+    id              SERIAL PRIMARY KEY,
+    user_id         UUID REFERENCES users(id),
+    habit_name      TEXT NOT NULL,
+    count           INTEGER DEFAULT 0,
+    last_date       DATE
 );

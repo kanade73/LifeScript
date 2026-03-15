@@ -2,11 +2,6 @@
 
 import pytest
 
-# Ensure plugins are discovered before any test runs
-from lifescript.plugins import discover
-
-discover()
-
 
 @pytest.fixture(autouse=True)
 def _reset_compiler_cache():

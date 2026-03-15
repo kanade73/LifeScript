@@ -1,7 +1,6 @@
-"""Flet アプリケーションのエントリポイント — Miro 風ポップデザイン + VSCode 風構造。
+"""Flet アプリケーション — Miro 風デザインの LifeScript PC クライアント。
 
-全画面（Home / Editor / Dashboard）のナビゲーション、ログポーリング、
-ステータスバーを管理するアプリの骨格。
+Home（カレンダー）/ IDE / Dashboard の3画面構成。
 """
 
 from __future__ import annotations
@@ -15,8 +14,7 @@ from ..database.client import db_client
 from ..scheduler.scheduler import LifeScriptScheduler
 from .. import log_queue
 
-#ボタンの実装のために色を追加定義
-# ── Miro-inspired colour palette ────────────────────────────────────
+# ── Colour palette ──────────────────────────────────────────────────
 BG = "#FAFAF8"
 SIDEBAR_BG = "#F0EDE6"
 CARD_BG = "#FFFFFF"
@@ -33,23 +31,12 @@ DARK_TEXT = "#2D2B27"
 MID_TEXT = "#6B6560"
 LIGHT_TEXT = "#A09A93"
 
-#色の名前？の定義も追加
-# Re-export for use by other modules
 COLORS = {
-    "bg": BG,
-    "sidebar_bg": SIDEBAR_BG,
-    "card_bg": CARD_BG,
-    "editor_bg": EDITOR_BG,
-    "editor_fg": EDITOR_FG,
-    "yellow": YELLOW,
-    "blue": BLUE,
-    "green": GREEN,
-    "coral": CORAL,
-    "purple": PURPLE,
-    "orange": ORANGE,
-    "brown": BROWN,
-    "dark_text": DARK_TEXT,
-    "mid_text": MID_TEXT,
+    "bg": BG, "sidebar_bg": SIDEBAR_BG, "card_bg": CARD_BG,
+    "editor_bg": EDITOR_BG, "editor_fg": EDITOR_FG,
+    "yellow": YELLOW, "blue": BLUE, "green": GREEN,
+    "coral": CORAL, "purple": PURPLE, "orange": ORANGE,
+    "brown": BROWN, "dark_text": DARK_TEXT, "mid_text": MID_TEXT,
     "light_text": LIGHT_TEXT,
 }
 
@@ -66,18 +53,17 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             use_material3=True,
             visual_density=ft.VisualDensity.COMPACT,
         )
-        page.window.width = 1100
-        page.window.height = 760
-        page.window.min_width = 800
+        page.window.width = 1200
+        page.window.height = 800
+        page.window.min_width = 900
         page.window.min_height = 600
         page.padding = 0
 
-        from .home_view import HomeView  # noqa: PLC0415
-        from .main_screen import EditorView  # noqa: PLC0415
-        from .dashboard_view import DashboardView  # noqa: PLC0415
-        from .settings_screen import SettingsDialog  # noqa: PLC0415
+        from .home_view import HomeView
+        from .main_screen import EditorView
+        from .dashboard_view import DashboardView
 
-        # ── DB connect (Supabase or SQLite fallback) ──────────────
+        # ── DB connect ──────────────────────────────────────
         db_client.connect()
         if db_client.is_connected and not scheduler.is_running:
             scheduler.start()
@@ -90,7 +76,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         views = [home_view, editor_view, dashboard_view]
         active_view: list = [home_view]
 
-        # ── Content area ────────────────────────────────────────────
+        # ── Content area ─────────────────────────────────────
         content_area = ft.Container(
             content=home_view.build(),
             expand=True,
@@ -99,119 +85,74 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             border_radius=ft.border_radius.only(top_left=16),
         )
 
-        # ── Activity bar navigation ─────────────────────────────────
-        def _on_nav(index: int) -> None:
-            active_view[0] = views[index]
-            content_area.content = views[index].build()
-            for i, btn in enumerate(nav_buttons):
-                btn.style = ft.ButtonStyle(
-                    bgcolor=YELLOW if i == index else ft.Colors.TRANSPARENT,
-                    shape=ft.RoundedRectangleBorder(radius=12),
-                    padding=12,
-                )
-            page.update()
+        # ── Sidebar navigation (常時展開) ─────────────────────
+        _nav_index = [0]
 
-        nav_buttons = [
-            ft.IconButton(
-                icon=ft.Icons.HOME_ROUNDED,
-                icon_color=DARK_TEXT,
-                icon_size=22,
-                tooltip="Home",
-                style=ft.ButtonStyle(
-                    bgcolor=YELLOW,
-                    shape=ft.RoundedRectangleBorder(radius=12),
-                    padding=12,
-                ),
-                on_click=lambda e: _on_nav(0),
-            ),
-            ft.IconButton(
-                icon=ft.Icons.EDIT_ROUNDED,
-                icon_color=DARK_TEXT,
-                icon_size=22,
-                tooltip="Editor",
-                style=ft.ButtonStyle(
-                    bgcolor=ft.Colors.TRANSPARENT,
-                    shape=ft.RoundedRectangleBorder(radius=12),
-                    padding=12,
-                ),
-                on_click=lambda e: _on_nav(1),
-            ),
-            ft.IconButton(
-                icon=ft.Icons.DASHBOARD_ROUNDED,
-                icon_color=DARK_TEXT,
-                icon_size=22,
-                tooltip="Dashboard",
-                style=ft.ButtonStyle(
-                    bgcolor=ft.Colors.TRANSPARENT,
-                    shape=ft.RoundedRectangleBorder(radius=12),
-                    padding=12,
-                ),
-                on_click=lambda e: _on_nav(2),
-            ),
+        nav_items = [
+            (ft.Icons.HOME_ROUNDED, "Home"),
+            (ft.Icons.CODE_ROUNDED, "IDE"),
+            (ft.Icons.DASHBOARD_ROUNDED, "Dashboard"),
         ]
 
-        # ── Dev mode badge ─────────────────────────────────────────
-        dev_badge = ft.IconButton(
-            icon=ft.Icons.DEVELOPER_MODE_ROUNDED,
-            icon_color=PURPLE,
-            icon_size=22,
-            tooltip="開発モード (認証スキップ中)",
-            style=ft.ButtonStyle(padding=8),
-        )
+        def _build_nav_row(index: int) -> ft.Container:
+            icon, label = nav_items[index]
+            is_active = index == _nav_index[0]
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(icon, size=22, color=DARK_TEXT),
+                    ft.Text(label, size=13, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=YELLOW if is_active else ft.Colors.TRANSPARENT,
+                border_radius=12,
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                on_click=lambda e, idx=index: _on_nav(idx),
+                ink=True,
+            )
+
+        sidebar_column = ft.Column(spacing=4)
+
+        def _rebuild_sidebar() -> None:
+            sidebar_column.controls = [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            content=ft.Text("LS", size=16, weight=ft.FontWeight.W_900, color=CARD_BG),
+                            width=36, height=36, bgcolor=BLUE,
+                            border_radius=10, alignment=ft.Alignment(0, 0),
+                        ),
+                        ft.Text("LifeScript", size=14, weight=ft.FontWeight.W_800, color=CARD_BG),
+                    ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.only(left=4),
+                ),
+                ft.Container(height=12),
+                *[_build_nav_row(i) for i in range(len(nav_items))],
+                ft.Container(expand=True),
+            ]
+
+        def _on_nav(index: int) -> None:
+            _nav_index[0] = index
+            active_view[0] = views[index]
+            content_area.content = views[index].build()
+            _rebuild_sidebar()
+            page.update()
+
+        _rebuild_sidebar()
 
         activity_bar = ft.Container(
-            content=ft.Column(
-                [
-                    # Logo / brand area
-                    ft.Container(
-                        content=ft.Text(
-                            "LS",
-                            size=18,
-                            weight=ft.FontWeight.W_900,
-                            color=CARD_BG,
-                        ),
-                        width=40,
-                        height=40,
-                        bgcolor=BLUE,
-                        border_radius=12,
-                        alignment=ft.Alignment(0, 0),
-                    ),
-                    ft.Container(height=16),
-                    *nav_buttons,
-                    ft.Container(expand=True),
-                    dev_badge,
-                    ft.IconButton(
-                        icon=ft.Icons.SETTINGS_ROUNDED,
-                        icon_color=MID_TEXT,
-                        icon_size=20,
-                        tooltip="Settings",
-                        style=ft.ButtonStyle(
-                            shape=ft.RoundedRectangleBorder(radius=12),
-                            padding=12,
-                        ),
-                        on_click=lambda e: SettingsDialog(page=page, compiler=compiler).show(),
-                    ),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=4,
-            ),
-            width=64,
+            content=sidebar_column,
+            width=200,
             bgcolor=SIDEBAR_BG,
             padding=ft.padding.symmetric(vertical=12, horizontal=8),
         )
 
-        # ── Status bar (bottom) ─────────────────────────────────────
+        # ── Status bar ───────────────────────────────────────
         db_label = "Supabase" if db_client.is_supabase else "SQLite"
         scheduler_badge = ft.Container(
             content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.CIRCLE, size=8, color=GREEN),
-                    ft.Text("Scheduler", size=11, color=MID_TEXT),
-                ],
+                [ft.Icon(ft.Icons.CIRCLE, size=8, color=GREEN), ft.Text("Scheduler", size=11, color=MID_TEXT)],
                 spacing=4,
             ),
-            bgcolor=CARD_BG,
-            border_radius=10,
+            bgcolor=CARD_BG, border_radius=10,
             padding=ft.padding.symmetric(horizontal=10, vertical=4),
         )
 
@@ -220,43 +161,37 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 [
                     scheduler_badge,
                     ft.Container(
-                        content=ft.Text(
-                            f"DB: {db_label}",
-                            size=11,
-                            color=MID_TEXT,
-                        ),
-                        bgcolor=CARD_BG,
-                        border_radius=10,
+                        content=ft.Text(f"DB: {db_label}", size=11, color=MID_TEXT),
+                        bgcolor=CARD_BG, border_radius=10,
+                        padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                    ),
+                    ft.Container(
+                        content=ft.Text("API: :8000", size=11, color=MID_TEXT),
+                        bgcolor=CARD_BG, border_radius=10,
                         padding=ft.padding.symmetric(horizontal=10, vertical=4),
                     ),
                     ft.Container(expand=True),
-                    ft.Text("LifeScript v0.1 (dev)", size=11, color=LIGHT_TEXT),
+                    ft.Text("LifeScript v0.2", size=11, color=LIGHT_TEXT),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            height=32,
-            bgcolor=SIDEBAR_BG,
+            height=32, bgcolor=SIDEBAR_BG,
             padding=ft.padding.symmetric(horizontal=16),
         )
 
-        # ── Page layout ─────────────────────────────────────────────
+        # ── Page layout ──────────────────────────────────────
         page.add(
             ft.Column(
                 [
-                    ft.Row(
-                        [activity_bar, content_area],
-                        expand=True,
-                        spacing=0,
-                    ),
+                    ft.Row([activity_bar, content_area], expand=True, spacing=0),
                     status_bar,
                 ],
-                expand=True,
-                spacing=0,
+                expand=True, spacing=0,
             )
         )
 
-        # ── Centralised log polling ─────────────────────────────────
+        # ── Log polling ──────────────────────────────────────
         def _poll() -> None:
             entries = log_queue.drain()
             if entries:
@@ -275,7 +210,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         t.daemon = True
         t.start()
 
-        # ── Window close handler ────────────────────────────────────
+        # ── Window close ─────────────────────────────────────
         def on_window_event(e: ft.WindowEvent) -> None:
             if e.data == "close":
                 scheduler.stop()

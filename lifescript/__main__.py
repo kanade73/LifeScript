@@ -10,23 +10,23 @@ from dotenv import load_dotenv
 def main() -> None:
     load_dotenv()
 
-    # Plugin auto-discovery (must happen before compiler/validator/runner use plugins)
-    from .plugins import discover
-
-    discover()
-
     from .compiler.compiler import Compiler
     from .scheduler.scheduler import LifeScriptScheduler
+    from .api import start_api_server
     import flet as ft
     from .ui.app import create_app
 
     # --- LLM compiler ---
-    model = os.getenv("LITELLM_MODEL", "ollama/qwen2.5-coder:7b")
-    api_base = os.getenv("LITELLM_API_BASE", "http://localhost:11434")
-    compiler = Compiler(model=model, api_base=api_base)
+    model = os.getenv("LIFESCRIPT_MODEL", os.getenv("LITELLM_MODEL", "gemini/gemini-2.5-flash"))
+    api_base = os.getenv("LITELLM_API_BASE", "")
+    compiler = Compiler(model=model, api_base=api_base if api_base else None)
 
-    # --- Scheduler (DB connect + load is done after login in app.py) ---
+    # --- Scheduler ---
     scheduler = LifeScriptScheduler(compiler=compiler)
+
+    # --- REST API (iOS向け) ---
+    api_port = int(os.getenv("API_PORT", "8000"))
+    start_api_server(compiler, port=api_port)
 
     # --- Run UI ---
     ft.run(create_app(compiler=compiler, scheduler=scheduler))

@@ -1,8 +1,6 @@
 """データベースクライアント — Supabase（本番）+ SQLite（フォールバック）。
 
-SUPABASE_URL と SUPABASE_ANON_KEY が設定されている場合は Supabase に保存し、
-iPhone ダッシュボードからリアルタイムで読み取れるようにする。
-未設定の場合はローカルの SQLite にフォールバックする（開発用）。
+新仕様のテーブル: scripts, calendar_events, machine_logs, streaks
 """
 
 from __future__ import annotations
@@ -14,36 +12,54 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# SQLite fallback paths
-# ---------------------------------------------------------------------------
 _DB_DIR = Path.home() / ".lifescript"
 _DB_PATH = _DB_DIR / "lifescript.db"
 
 _SQLITE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS rules (
+CREATE TABLE IF NOT EXISTS scripts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    title           TEXT    NOT NULL,
-    lifescript_code TEXT    NOT NULL,
-    compiled_python TEXT    NOT NULL,
-    trigger_seconds INTEGER NOT NULL DEFAULT 60,
-    status          TEXT    NOT NULL DEFAULT 'active',
-    created_at      TEXT    NOT NULL
+    user_id         TEXT DEFAULT 'local',
+    dsl_text        TEXT NOT NULL,
+    compiled_python TEXT DEFAULT '',
+    active          INTEGER DEFAULT 1,
+    created_at      TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS logs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    rule_id       TEXT,
-    message       TEXT    NOT NULL DEFAULT '',
-    executed_at   TEXT    NOT NULL,
-    result        TEXT    NOT NULL DEFAULT 'success',
-    error_message TEXT    NOT NULL DEFAULT ''
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT DEFAULT 'local',
+    title           TEXT NOT NULL,
+    start_at        TEXT NOT NULL,
+    end_at          TEXT,
+    note            TEXT DEFAULT '',
+    source          TEXT NOT NULL DEFAULT 'user',
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS machine_logs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT DEFAULT 'local',
+    action_type     TEXT NOT NULL,
+    content         TEXT NOT NULL DEFAULT '',
+    triggered_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS streaks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT DEFAULT 'local',
+    habit_name      TEXT NOT NULL,
+    count           INTEGER DEFAULT 0,
+    last_date       TEXT
 );
 """
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 # ======================================================================
@@ -55,69 +71,135 @@ class _SupabaseBackend:
 
         self._client = create_client(url, key)
 
-    # -- Rules ----------------------------------------------------------
-    def save_rule(
+    # -- Scripts --------------------------------------------------------
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
+        data = {
+            "dsl_text": dsl_text,
+            "compiled_python": compiled_python,
+            "active": True,
+        }
+        resp = self._client.table("scripts").insert(data).execute()
+        return resp.data[0]
+
+    def get_scripts(self, user_id: str = "local") -> list[dict]:
+        resp = (
+            self._client.table("scripts")
+            .select("*")
+            .eq("active", True)
+            .is_("user_id", "null")
+            .order("id")
+            .execute()
+        )
+        return resp.data
+
+    def get_script_by_id(self, script_id: int) -> dict:
+        resp = self._client.table("scripts").select("*").eq("id", script_id).execute()
+        if not resp.data:
+            raise RuntimeError(f"スクリプト {script_id} が見つかりません")
+        return resp.data[0]
+
+    def update_script(self, script_id: int, **kwargs: Any) -> None:
+        self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
+
+    def delete_script(self, script_id: int) -> None:
+        self._client.table("scripts").update({"active": False}).eq("id", script_id).execute()
+
+    # -- Calendar Events ------------------------------------------------
+    def add_event(
         self,
         title: str,
-        lifescript_code: str,
-        compiled_python: str,
-        trigger_seconds: int = 60,
+        start_at: str,
+        end_at: str | None = None,
+        note: str = "",
+        source: str = "user",
+        user_id: str = "local",
     ) -> dict:
         data = {
             "title": title,
-            "lifescript_code": lifescript_code,
-            "compiled_python": compiled_python,
-            "trigger_seconds": trigger_seconds,
-            "status": "active",
-            "created_at": _now(),
+            "start_at": start_at,
+            "end_at": end_at,
+            "note": note,
+            "source": source,
         }
-        resp = self._client.table("rules").insert(data).execute()
+        resp = self._client.table("calendar_events").insert(data).execute()
         return resp.data[0]
 
-    def get_rules(self) -> list[dict]:
-        resp = self._client.table("rules").select("*").eq("status", "active").order("id").execute()
-        return resp.data
-
-    def get_rule_by_id(self, rule_id: int) -> dict:
-        resp = self._client.table("rules").select("*").eq("id", rule_id).execute()
-        if not resp.data:
-            raise RuntimeError(f"ルール {rule_id} が見つかりません")
-        return resp.data[0]
-
-    def update_rule_python(self, rule_id: str, compiled_python: str) -> None:
-        self._client.table("rules").update({"compiled_python": compiled_python}).eq(
-            "id", str(rule_id)
-        ).execute()
-
-    def update_rule_status(self, rule_id: str, status: str) -> None:
-        self._client.table("rules").update({"status": status}).eq("id", str(rule_id)).execute()
-
-    def delete_rule(self, rule_id: str) -> None:
-        self.update_rule_status(rule_id, "deleted")
-
-    # -- Logs -----------------------------------------------------------
-    def save_log(
+    def get_events(
         self,
-        rule_id: str | None,
-        message: str,
-        result: str = "success",
-        error_message: str = "",
-    ) -> None:
-        data = {
-            "rule_id": str(rule_id) if rule_id else None,
-            "message": message,
-            "executed_at": _now(),
-            "result": result,
-            "error_message": error_message,
-        }
-        self._client.table("logs").insert(data).execute()
-
-    def get_logs(self, rule_id: str | None = None, limit: int = 100) -> list[dict]:
-        q = self._client.table("logs").select("*")
-        if rule_id:
-            q = q.eq("rule_id", str(rule_id))
-        resp = q.order("id", desc=True).limit(limit).execute()
+        user_id: str = "local",
+        keyword: str | None = None,
+        start_from: str | None = None,
+        start_to: str | None = None,
+    ) -> list[dict]:
+        q = self._client.table("calendar_events").select("*").is_("user_id", "null")
+        if keyword:
+            q = q.ilike("title", f"%{keyword}%")
+        if start_from:
+            q = q.gte("start_at", start_from)
+        if start_to:
+            q = q.lte("start_at", start_to)
+        resp = q.order("start_at").execute()
         return resp.data
+
+    def delete_event(self, event_id: int) -> None:
+        self._client.table("calendar_events").delete().eq("id", event_id).execute()
+
+    # -- Machine Logs ---------------------------------------------------
+    def add_machine_log(
+        self,
+        action_type: str,
+        content: str,
+        user_id: str = "local",
+    ) -> dict:
+        data = {
+            "action_type": action_type,
+            "content": content,
+        }
+        resp = self._client.table("machine_logs").insert(data).execute()
+        return resp.data[0]
+
+    def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
+        resp = (
+            self._client.table("machine_logs")
+            .select("*")
+            .is_("user_id", "null")
+            .order("id", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data
+
+    # -- Streaks --------------------------------------------------------
+    def get_streak(self, habit_name: str, user_id: str = "local") -> int:
+        resp = (
+            self._client.table("streaks")
+            .select("count")
+            .is_("user_id", "null")
+            .eq("habit_name", habit_name)
+            .execute()
+        )
+        if resp.data:
+            return resp.data[0]["count"]
+        return 0
+
+    def update_streak(self, habit_name: str, count: int, user_id: str = "local") -> None:
+        resp = (
+            self._client.table("streaks")
+            .select("id")
+            .is_("user_id", "null")
+            .eq("habit_name", habit_name)
+            .execute()
+        )
+        if resp.data:
+            self._client.table("streaks").update(
+                {"count": count, "last_date": _today()}
+            ).eq("id", resp.data[0]["id"]).execute()
+        else:
+            self._client.table("streaks").insert({
+                "habit_name": habit_name,
+                "count": count,
+                "last_date": _today(),
+            }).execute()
 
 
 # ======================================================================
@@ -143,73 +225,132 @@ class _SQLiteBackend:
             self._conn.commit()
             return cur
 
-    # -- Rules ----------------------------------------------------------
-    def save_rule(
+    def _fetchall(self, sql: str, params: tuple = ()) -> list[dict]:
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute(sql, params)
+            return [dict(row) for row in cur.fetchall()]
+
+    def _fetchone(self, sql: str, params: tuple = ()) -> dict | None:
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute(sql, params)
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    # -- Scripts --------------------------------------------------------
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
+        cur = self._execute(
+            "INSERT INTO scripts (user_id, dsl_text, compiled_python, created_at) VALUES (?,?,?,?)",
+            (user_id, dsl_text, compiled_python, _now()),
+        )
+        return self.get_script_by_id(cur.lastrowid)
+
+    def get_scripts(self, user_id: str = "local") -> list[dict]:
+        return self._fetchall(
+            "SELECT * FROM scripts WHERE active = 1 AND user_id = ? ORDER BY id",
+            (user_id,),
+        )
+
+    def get_script_by_id(self, script_id: int | None) -> dict:
+        row = self._fetchone("SELECT * FROM scripts WHERE id = ?", (script_id,))
+        if row is None:
+            raise RuntimeError(f"スクリプト {script_id} が見つかりません")
+        return row
+
+    def update_script(self, script_id: int, **kwargs: Any) -> None:
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        vals = tuple(kwargs.values()) + (script_id,)
+        self._execute(f"UPDATE scripts SET {sets} WHERE id = ?", vals)
+
+    def delete_script(self, script_id: int) -> None:
+        self._execute("UPDATE scripts SET active = 0 WHERE id = ?", (script_id,))
+
+    # -- Calendar Events ------------------------------------------------
+    def add_event(
         self,
         title: str,
-        lifescript_code: str,
-        compiled_python: str,
-        trigger_seconds: int = 60,
+        start_at: str,
+        end_at: str | None = None,
+        note: str = "",
+        source: str = "user",
+        user_id: str = "local",
     ) -> dict:
         cur = self._execute(
-            """INSERT INTO rules (title, lifescript_code, compiled_python, trigger_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (title, lifescript_code, compiled_python, trigger_seconds, _now()),
+            """INSERT INTO calendar_events (user_id, title, start_at, end_at, note, source, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (user_id, title, start_at, end_at, note, source, _now()),
         )
-        return self.get_rule_by_id(cur.lastrowid)
+        row = self._fetchone("SELECT * FROM calendar_events WHERE id = ?", (cur.lastrowid,))
+        return row  # type: ignore[return-value]
 
-    def get_rules(self) -> list[dict]:
-        with self._lock:
-            assert self._conn is not None
-            cur = self._conn.execute("SELECT * FROM rules WHERE status = 'active' ORDER BY id")
-            return [dict(row) for row in cur.fetchall()]
-
-    def get_rule_by_id(self, rule_id: int | None) -> dict:
-        with self._lock:
-            assert self._conn is not None
-            cur = self._conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
-            row = cur.fetchone()
-            if row is None:
-                raise RuntimeError(f"ルール {rule_id} が見つかりません")
-            return dict(row)
-
-    def update_rule_python(self, rule_id: str, compiled_python: str) -> None:
-        self._execute(
-            "UPDATE rules SET compiled_python = ? WHERE id = ?",
-            (compiled_python, str(rule_id)),
-        )
-
-    def update_rule_status(self, rule_id: str, status: str) -> None:
-        self._execute("UPDATE rules SET status = ? WHERE id = ?", (status, str(rule_id)))
-
-    def delete_rule(self, rule_id: str) -> None:
-        self.update_rule_status(rule_id, "deleted")
-
-    # -- Logs -----------------------------------------------------------
-    def save_log(
+    def get_events(
         self,
-        rule_id: str | None,
-        message: str,
-        result: str = "success",
-        error_message: str = "",
-    ) -> None:
-        self._execute(
-            """INSERT INTO logs (rule_id, message, executed_at, result, error_message)
-               VALUES (?, ?, ?, ?, ?)""",
-            (str(rule_id) if rule_id else None, message, _now(), result, error_message),
+        user_id: str = "local",
+        keyword: str | None = None,
+        start_from: str | None = None,
+        start_to: str | None = None,
+    ) -> list[dict]:
+        sql = "SELECT * FROM calendar_events WHERE user_id = ?"
+        params: list[Any] = [user_id]
+        if keyword:
+            sql += " AND title LIKE ?"
+            params.append(f"%{keyword}%")
+        if start_from:
+            sql += " AND start_at >= ?"
+            params.append(start_from)
+        if start_to:
+            sql += " AND start_at <= ?"
+            params.append(start_to)
+        sql += " ORDER BY start_at"
+        return self._fetchall(sql, tuple(params))
+
+    def delete_event(self, event_id: int) -> None:
+        self._execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
+
+    # -- Machine Logs ---------------------------------------------------
+    def add_machine_log(
+        self,
+        action_type: str,
+        content: str,
+        user_id: str = "local",
+    ) -> dict:
+        cur = self._execute(
+            "INSERT INTO machine_logs (user_id, action_type, content, triggered_at) VALUES (?,?,?,?)",
+            (user_id, action_type, content, _now()),
+        )
+        row = self._fetchone("SELECT * FROM machine_logs WHERE id = ?", (cur.lastrowid,))
+        return row  # type: ignore[return-value]
+
+    def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
+        return self._fetchall(
+            "SELECT * FROM machine_logs WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
         )
 
-    def get_logs(self, rule_id: str | None = None, limit: int = 100) -> list[dict]:
-        with self._lock:
-            assert self._conn is not None
-            if rule_id:
-                cur = self._conn.execute(
-                    "SELECT * FROM logs WHERE rule_id = ? ORDER BY id DESC LIMIT ?",
-                    (str(rule_id), limit),
-                )
-            else:
-                cur = self._conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,))
-            return [dict(row) for row in cur.fetchall()]
+    # -- Streaks --------------------------------------------------------
+    def get_streak(self, habit_name: str, user_id: str = "local") -> int:
+        row = self._fetchone(
+            "SELECT count FROM streaks WHERE user_id = ? AND habit_name = ?",
+            (user_id, habit_name),
+        )
+        return row["count"] if row else 0
+
+    def update_streak(self, habit_name: str, count: int, user_id: str = "local") -> None:
+        row = self._fetchone(
+            "SELECT id FROM streaks WHERE user_id = ? AND habit_name = ?",
+            (user_id, habit_name),
+        )
+        if row:
+            self._execute(
+                "UPDATE streaks SET count = ?, last_date = ? WHERE id = ?",
+                (count, _today(), row["id"]),
+            )
+        else:
+            self._execute(
+                "INSERT INTO streaks (user_id, habit_name, count, last_date) VALUES (?,?,?,?)",
+                (user_id, habit_name, count, _today()),
+            )
 
 
 # ======================================================================
@@ -231,8 +372,7 @@ class DatabaseClient:
                 self._is_supabase = True
                 return
             except Exception:
-                pass  # Fall through to SQLite
-        # SQLite fallback
+                pass
         sqlite = _SQLiteBackend()
         sqlite.connect()
         self._backend = sqlite
@@ -246,46 +386,49 @@ class DatabaseClient:
     def is_supabase(self) -> bool:
         return self._is_supabase
 
-    # Delegate all methods to the active backend
-    def save_rule(self, **kwargs: Any) -> dict:
-        assert self._backend is not None
-        return self._backend.save_rule(**kwargs)
+    def _b(self) -> _SupabaseBackend | _SQLiteBackend:
+        assert self._backend is not None, "DB未接続です。connect()を先に呼んでください。"
+        return self._backend
 
-    def get_rules(self) -> list[dict]:
-        assert self._backend is not None
-        return self._backend.get_rules()
+    # Scripts
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local") -> dict:
+        return self._b().save_script(dsl_text, compiled_python, user_id)
 
-    def get_rule_by_id(self, rule_id: int | None) -> dict:
-        assert self._backend is not None
-        return self._backend.get_rule_by_id(rule_id)
+    def get_scripts(self, user_id: str = "local") -> list[dict]:
+        return self._b().get_scripts(user_id)
 
-    def update_rule_python(self, rule_id: str, compiled_python: str) -> None:
-        assert self._backend is not None
-        self._backend.update_rule_python(rule_id, compiled_python)
+    def get_script_by_id(self, script_id: int) -> dict:
+        return self._b().get_script_by_id(script_id)
 
-    def update_rule_status(self, rule_id: str, status: str) -> None:
-        assert self._backend is not None
-        self._backend.update_rule_status(rule_id, status)
+    def update_script(self, script_id: int, **kwargs: Any) -> None:
+        self._b().update_script(script_id, **kwargs)
 
-    def delete_rule(self, rule_id: str) -> None:
-        assert self._backend is not None
-        self._backend.delete_rule(rule_id)
+    def delete_script(self, script_id: int) -> None:
+        self._b().delete_script(script_id)
 
-    def save_log(
-        self,
-        rule_id: str | None = None,
-        message: str = "",
-        result: str = "success",
-        error_message: str = "",
-    ) -> None:
-        assert self._backend is not None
-        self._backend.save_log(
-            rule_id=rule_id, message=message, result=result, error_message=error_message
-        )
+    # Calendar Events
+    def add_event(self, **kwargs: Any) -> dict:
+        return self._b().add_event(**kwargs)
 
-    def get_logs(self, rule_id: str | None = None, limit: int = 100) -> list[dict]:
-        assert self._backend is not None
-        return self._backend.get_logs(rule_id=rule_id, limit=limit)
+    def get_events(self, **kwargs: Any) -> list[dict]:
+        return self._b().get_events(**kwargs)
+
+    def delete_event(self, event_id: int) -> None:
+        self._b().delete_event(event_id)
+
+    # Machine Logs
+    def add_machine_log(self, action_type: str, content: str, user_id: str = "local") -> dict:
+        return self._b().add_machine_log(action_type, content, user_id)
+
+    def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
+        return self._b().get_machine_logs(user_id, limit)
+
+    # Streaks
+    def get_streak(self, habit_name: str, user_id: str = "local") -> int:
+        return self._b().get_streak(habit_name, user_id)
+
+    def update_streak(self, habit_name: str, count: int, user_id: str = "local") -> None:
+        self._b().update_streak(habit_name, count, user_id)
 
 
 # Application-wide singleton

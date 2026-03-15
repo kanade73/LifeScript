@@ -1,4 +1,4 @@
-"""Integration tests for the LifeScript scheduler."""
+"""スケジューラの統合テスト。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from lifescript.database.client import DatabaseClient
 
 @pytest.fixture()
 def db(tmp_path):
-    """Create a temporary database for testing."""
+    import os
+    old_url = os.environ.pop("SUPABASE_URL", None)
+    old_key = os.environ.pop("SUPABASE_ANON_KEY", None)
     db_path = tmp_path / "test.db"
     client = DatabaseClient()
     with (
@@ -22,6 +24,10 @@ def db(tmp_path):
     ):
         client.connect()
         yield client
+    if old_url:
+        os.environ["SUPABASE_URL"] = old_url
+    if old_key:
+        os.environ["SUPABASE_ANON_KEY"] = old_key
 
 
 @pytest.fixture()
@@ -48,101 +54,49 @@ class TestSchedulerLifecycle:
 
     def test_double_start_safe(self, scheduler):
         scheduler.start()
-        scheduler.start()  # Should not raise
+        scheduler.start()
         assert scheduler.is_running
 
 
-class TestSchedulerRules:
-    def test_add_rule(self, scheduler, db):
+class TestSchedulerScripts:
+    def test_add_script(self, scheduler, db):
         scheduler.start()
-        rule = db.save_rule(
-            title="test",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-            trigger_seconds=60,
-        )
-        scheduler.add_rule(rule)
-        assert str(rule["id"]) in scheduler.get_active_ids()
+        script = db.save_script(dsl_text="test dsl", compiled_python="x = 1")
+        scheduler.add_script(script, trigger_seconds=60)
+        assert str(script["id"]) in scheduler.get_active_ids()
 
-    def test_remove_rule(self, scheduler, db):
+    def test_remove_script(self, scheduler, db):
         scheduler.start()
-        rule = db.save_rule(
-            title="test",
-            lifescript_code="every 1m { }",
-            compiled_python="x = 1",
-            trigger_seconds=60,
-        )
-        scheduler.add_rule(rule)
-        scheduler.remove_rule(str(rule["id"]))
-        assert str(rule["id"]) not in scheduler.get_active_ids()
+        script = db.save_script(dsl_text="test dsl", compiled_python="x = 1")
+        scheduler.add_script(script, trigger_seconds=60)
+        scheduler.remove_script(str(script["id"]))
+        assert str(script["id"]) not in scheduler.get_active_ids()
 
     def test_remove_all(self, scheduler, db):
         scheduler.start()
         for i in range(3):
-            rule = db.save_rule(
-                title=f"test_{i}",
-                lifescript_code="every 1m { }",
-                compiled_python="x = 1",
-                trigger_seconds=60,
-            )
-            scheduler.add_rule(rule)
+            script = db.save_script(dsl_text=f"dsl_{i}", compiled_python="x = 1")
+            scheduler.add_script(script, trigger_seconds=60)
         scheduler.remove_all()
         assert scheduler.get_active_ids() == []
 
     def test_load_from_db(self, scheduler, db):
         scheduler.start()
         for i in range(2):
-            db.save_rule(
-                title=f"rule_{i}",
-                lifescript_code="every 1m { }",
-                compiled_python="x = 1",
-                trigger_seconds=60,
-            )
+            db.save_script(dsl_text=f"dsl_{i}", compiled_python="x = 1")
         scheduler.load_from_db()
         assert len(scheduler.get_active_ids()) == 2
 
 
-class TestSchedulerPauseResume:
-    def test_pause_rule(self, scheduler, db):
-        scheduler.start()
-        with patch("lifescript.scheduler.scheduler.db_client", db):
-            rule = db.save_rule(
-                title="pausable",
-                lifescript_code="every 1m { }",
-                compiled_python="x = 1",
-                trigger_seconds=60,
-            )
-            scheduler.add_rule(rule)
-            scheduler.pause_rule(str(rule["id"]))
-            assert str(rule["id"]) not in scheduler.get_active_ids()
-            # Check DB status
-            updated = db.get_rule_by_id(rule["id"])
-            assert updated["status"] == "paused"
-
-    def test_resume_rule(self, scheduler, db):
-        scheduler.start()
-        with patch("lifescript.scheduler.scheduler.db_client", db):
-            rule = db.save_rule(
-                title="resumable",
-                lifescript_code="every 1m { }",
-                compiled_python="x = 1",
-                trigger_seconds=60,
-            )
-            scheduler.add_rule(rule)
-            scheduler.pause_rule(str(rule["id"]))
-            scheduler.resume_rule(str(rule["id"]))
-            assert str(rule["id"]) in scheduler.get_active_ids()
-
-
 class TestSchedulerExecution:
     @patch("lifescript.scheduler.scheduler.run_sandboxed")
-    def test_run_rule_success(self, mock_run, scheduler, db):
+    def test_run_script_success(self, mock_run, scheduler, db):
         with patch("lifescript.scheduler.scheduler.db_client", db):
-            scheduler._run_rule("1", "test_rule", "x = 1", "every 1m { }")
+            scheduler._run_script("1", "x = 1", "test dsl")
             mock_run.assert_called_once_with("x = 1", rule_id="1")
 
     @patch("lifescript.scheduler.scheduler.run_sandboxed")
-    def test_run_rule_error_logs(self, mock_run, scheduler, db):
+    def test_run_script_error_logs(self, mock_run, scheduler, db):
         from lifescript.exceptions import SandboxError
 
         mock_run.side_effect = SandboxError("test error")
@@ -150,7 +104,6 @@ class TestSchedulerExecution:
             patch("lifescript.scheduler.scheduler.db_client", db),
             patch.object(scheduler, "_try_recompile"),
         ):
-            scheduler._run_rule("1", "test_rule", "x = 1/0", "every 1m { }")
-            logs = db.get_logs("1")
-            assert len(logs) == 1
-            assert logs[0]["result"] == "error"
+            scheduler._run_script("1", "x = 1/0", "test dsl")
+            logs = db.get_machine_logs()
+            assert any("test error" in l.get("content", "") for l in logs)

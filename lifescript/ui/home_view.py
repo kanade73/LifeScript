@@ -1,461 +1,532 @@
-"""ホーム画面 — オシャレな通知フィードとアクティビティタイムライン。
+"""ホーム画面 — ウィジェットボード。
 
-アプリ起動時の最初の画面。DB からの最新ログをカード形式で表示し、
-リアルタイム通知をタイムラインとして受信する。
+スマホのホーム画面のように、LifeScript が操作できる「ウィジェット」が並ぶ。
+関数ライブラリが増えると対応するウィジェットが追加される。
+
+現在のウィジェット:
+  - 時計         （常時表示）
+  - カレンダー   （calendar.* で操作）
+  - リマインダー （notify / 手動追加）
+  - マシン提案   （calendar.suggest 等で自動表示）
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import calendar as cal_mod
+from datetime import datetime, timedelta, timezone
 
 import flet as ft
 
 from ..database.client import db_client
-from .app import COLORS
+from ..scheduler.scheduler import LifeScriptScheduler
+from .app import (
+    CARD_BG, BLUE, GREEN, CORAL, YELLOW, DARK_TEXT, MID_TEXT, LIGHT_TEXT,
+    PURPLE, ORANGE, BG, SIDEBAR_BG, EDITOR_BG, EDITOR_FG,
+)
 
-# ── Home-specific palette (richer, more consumer-facing) ──────────
-_HOME_BG = "#F7F5F0"
-_CARD_GRADIENT_START = "#FFFFFF"
-_CARD_GRADIENT_END = "#FDFCFA"
-_ACCENT_WARM = "#FF9F43"
-_ACCENT_MINT = "#00D2D3"
-_ACCENT_LAVENDER = "#A29BFE"
-_ACCENT_ROSE = "#FD79A8"
-_SUBTLE_BORDER = "#EDE8E0"
-_TIME_COLOR = "#B8B0A4"
-
-
-def _time_ago(iso_str: str) -> str:
-    """ISO タイムスタンプを「3分前」のような相対時刻に変換する。"""
-    try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-        diff = now - dt
-        seconds = int(diff.total_seconds())
-        if seconds < 60:
-            return "たった今"
-        if seconds < 3600:
-            return f"{seconds // 60}分前"
-        if seconds < 86400:
-            return f"{seconds // 3600}時間前"
-        return f"{seconds // 86400}日前"
-    except Exception:
-        return ""
-
-
-def _pick_accent(index: int) -> str:
-    """視覚的な多様性のためにアクセントカラーを循環させる。"""
-    accents = [_ACCENT_WARM, _ACCENT_MINT, _ACCENT_LAVENDER, _ACCENT_ROSE]
-    return accents[index % len(accents)]
-
-
-def _pick_icon(result: str) -> tuple[str, str]:
-    """ログの result に応じて (アイコン名, 色) を返す。"""
-    if result == "error":
-        return ft.Icons.ERROR_OUTLINE_ROUNDED, COLORS["coral"]
-    if result == "warning":
-        return ft.Icons.WARNING_AMBER_ROUNDED, COLORS["yellow"]
-    return ft.Icons.CHECK_CIRCLE_OUTLINE_ROUNDED, COLORS["green"]
+_BORDER = "#E8E4DC"
 
 
 class HomeView:
-    def __init__(self, page: ft.Page, scheduler) -> None:
+    def __init__(self, page: ft.Page, scheduler: LifeScriptScheduler) -> None:
         self._page = page
         self._scheduler = scheduler
+        self._logs: list[tuple[str, str, str]] = []
+        self._cal_year = datetime.now().year
+        self._cal_month = datetime.now().month
 
-        # ── Header ────────────────────────────────────────────────
-        greeting = self._get_greeting()
+    def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
+        self._logs = (entries + self._logs)[:50]
 
-        header = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Text(
-                        greeting,
-                        size=28,
-                        weight=ft.FontWeight.W_800,
-                        color=COLORS["dark_text"],
-                    ),
-                    ft.Text(
-                        "LifeScript が暮らしを動かしています",
-                        size=14,
-                        color=COLORS["mid_text"],
-                        weight=ft.FontWeight.W_400,
-                    ),
-                ],
-                spacing=4,
-            ),
-            padding=ft.padding.only(bottom=8),
-        )
-
-        # ── Summary chips ─────────────────────────────────────────
-        self._active_chip = self._summary_chip(
-            ft.Icons.BOLT_ROUNDED, "0 ルール稼働中", _ACCENT_WARM
-        )
-        self._db_chip = self._summary_chip(ft.Icons.CLOUD_OUTLINED, "未接続", _ACCENT_MINT)
-        self._scheduler_chip = self._summary_chip(
-            ft.Icons.TIMER_OUTLINED, "停止中", _ACCENT_LAVENDER
-        )
-
-        chips_row = ft.Row(
-            [self._active_chip, self._db_chip, self._scheduler_chip],
-            spacing=10,
-        )
-
-        # ── Activity feed ─────────────────────────────────────────
-        self._feed = ft.ListView(
-            expand=True,
-            spacing=8,
-            padding=ft.padding.only(right=4),
-        )
-
-        feed_section = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Container(
-                                content=ft.Icon(
-                                    ft.Icons.NOTIFICATIONS_NONE_ROUNDED,
-                                    size=18,
-                                    color=_ACCENT_WARM,
-                                ),
-                                width=32,
-                                height=32,
-                                bgcolor="#FFF5EB",
-                                border_radius=10,
-                                alignment=ft.Alignment(0, 0),
-                            ),
-                            ft.Text(
-                                "アクティビティ",
-                                size=16,
-                                weight=ft.FontWeight.W_700,
-                                color=COLORS["dark_text"],
-                            ),
-                            ft.Container(expand=True),
-                            ft.TextButton(
-                                "すべて消去",
-                                style=ft.ButtonStyle(
-                                    color=COLORS["light_text"],
-                                    padding=ft.padding.symmetric(horizontal=8),
-                                ),
-                                on_click=self._clear_feed,
-                            ),
-                        ],
-                        spacing=10,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Container(
-                        content=self._feed,
-                        expand=True,
-                        border_radius=16,
-                    ),
-                ],
-                spacing=12,
-                expand=True,
-            ),
-            expand=True,
-        )
-
-        self._content = ft.Column(
-            [header, chips_row, feed_section],
-            expand=True,
-            spacing=16,
-        )
-
-        self._refresh_chips()
-        self._load_recent_logs()
-
-    def build(self) -> ft.Column:
-        return self._content
-
-    # ------------------------------------------------------------------
-    # Greeting
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _get_greeting() -> str:
+    def build(self) -> ft.Control:
+        # ── Header ────────────────────────────────────────────
         hour = datetime.now().hour
         if hour < 6:
-            return "おやすみなさい"
-        if hour < 12:
-            return "おはようございます"
-        if hour < 18:
-            return "こんにちは"
-        return "こんばんは"
+            greeting = "おやすみなさい"
+        elif hour < 12:
+            greeting = "おはようございます"
+        elif hour < 18:
+            greeting = "こんにちは"
+        else:
+            greeting = "こんばんは"
 
-    # ------------------------------------------------------------------
-    # Summary chips
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _summary_chip(icon: str, label: str, accent: str) -> ft.Container:
-        return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Container(
-                        content=ft.Icon(icon, size=16, color=accent),
-                        width=30,
-                        height=30,
-                        bgcolor=f"{accent}18",
-                        border_radius=10,
-                        alignment=ft.Alignment(0, 0),
-                    ),
+        active_count = len(self._scheduler.get_active_ids())
+
+        header = ft.Container(
+            content=ft.Row([
+                ft.Column([
+                    ft.Text(greeting, size=24, weight=ft.FontWeight.W_800, color=DARK_TEXT),
                     ft.Text(
-                        label,
-                        size=13,
-                        weight=ft.FontWeight.W_600,
-                        color=COLORS["dark_text"],
+                        f"{active_count} 件のスクリプトが稼働中",
+                        size=12, color=MID_TEXT,
                     ),
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            bgcolor=COLORS["card_bg"],
-            border_radius=14,
-            padding=ft.padding.symmetric(horizontal=14, vertical=10),
-            border=ft.border.all(1, _SUBTLE_BORDER),
-            expand=True,
+                ], spacing=2),
+                ft.Container(expand=True),
+            ]),
+            padding=ft.padding.only(bottom=12),
         )
 
-    def _refresh_chips(self) -> None:
-        # Active rules
+        # ── ウィジェット群 ────────────────────────────────────
+        clock_widget = self._widget_clock()
+        calendar_widget = self._widget_calendar()
+        reminder_widget = self._widget_reminders()
+        notification_widget = self._widget_notifications()
+        suggestion_widget = self._widget_suggestions()
+        upcoming_widget = self._widget_upcoming()
+
+        # ── ウィジェットグリッド配置 ──────────────────────────
+        #  左列: 時計 + カレンダー + 通知
+        #  右列: リマインダー + マシン提案 + 直近の予定
+        return ft.Column([
+            header,
+            ft.Row([
+                # 左列
+                ft.Column([
+                    clock_widget,
+                    ft.Container(height=10),
+                    calendar_widget,
+                    ft.Container(height=10),
+                    notification_widget,
+                ], expand=2, spacing=0),
+                # 右列
+                ft.Column([
+                    reminder_widget,
+                    ft.Container(height=10),
+                    suggestion_widget,
+                    ft.Container(height=10),
+                    upcoming_widget,
+                ], expand=3, spacing=0, scroll=ft.ScrollMode.AUTO),
+            ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], expand=True, spacing=0)
+
+    # ==================================================================
+    # Widget: 時計
+    # ==================================================================
+    def _widget_clock(self) -> ft.Container:
+        now = datetime.now()
+        time_str = now.strftime("%H:%M")
+        date_str = now.strftime("%Y年 %m月 %d日")
+        weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+        weekday = weekday_names[now.weekday()]
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(time_str, size=48, weight=ft.FontWeight.W_200, color=CARD_BG,
+                        font_family="Courier New"),
+                ft.Text(f"{date_str} ({weekday})", size=13, color=f"{CARD_BG}BB"),
+            ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=EDITOR_BG,
+            border_radius=16,
+            padding=ft.padding.symmetric(vertical=24, horizontal=20),
+            alignment=ft.Alignment(0, 0),
+        )
+
+    # ==================================================================
+    # Widget: カレンダー（コンパクト月表示）
+    # ==================================================================
+    def _widget_calendar(self) -> ft.Container:
+        year = self._cal_year
+        month = self._cal_month
+        today = datetime.now()
+
+        # イベントがある日を取得
+        event_days: set[int] = set()
         try:
-            active_ids = self._scheduler.get_active_ids()
-            label_ctrl = self._active_chip.content.controls[1]
-            label_ctrl.value = f"{len(active_ids)} ルール稼働中"
+            first = datetime(year, month, 1, tzinfo=timezone.utc)
+            last = datetime(year + (1 if month == 12 else 0),
+                            (1 if month == 12 else month + 1), 1, tzinfo=timezone.utc)
+            for ev in db_client.get_events(start_from=first.isoformat(), start_to=last.isoformat()):
+                try:
+                    d = datetime.fromisoformat(ev["start_at"].replace("Z", "+00:00"))
+                    if d.year == year and d.month == month:
+                        event_days.add(d.day)
+                except (ValueError, KeyError):
+                    pass
         except Exception:
             pass
 
-        # Database
-        label_ctrl2 = self._db_chip.content.controls[1]
-        if db_client.is_supabase:
-            label_ctrl2.value = "Supabase 接続中"
-        elif db_client.is_connected:
-            label_ctrl2.value = "SQLite (ローカル)"
-        else:
-            label_ctrl2.value = "未接続"
+        # ナビ
+        def _prev(e: ft.ControlEvent) -> None:
+            self._cal_month = 12 if self._cal_month == 1 else self._cal_month - 1
+            if self._cal_month == 12:
+                self._cal_year -= 1
+            self._page.update()
 
-        # Scheduler
-        label_ctrl3 = self._scheduler_chip.content.controls[1]
-        label_ctrl3.value = "スケジューラ稼働中" if self._scheduler.is_running else "停止中"
+        def _next(e: ft.ControlEvent) -> None:
+            self._cal_month = 1 if self._cal_month == 12 else self._cal_month + 1
+            if self._cal_month == 1:
+                self._cal_year += 1
+            self._page.update()
 
-    # ------------------------------------------------------------------
-    # Feed
-    # ------------------------------------------------------------------
-    def _load_recent_logs(self) -> None:
-        """DB から最新ログを読み込んでフィードに表示する。"""
-        try:
-            logs = db_client.get_logs(limit=30)
-            if not logs:
-                self._feed.controls.append(self._empty_state())
-                return
-            for i, log_entry in enumerate(logs):
-                self._feed.controls.append(self._feed_card(log_entry, i))
-        except Exception:
-            self._feed.controls.append(self._empty_state())
+        nav = ft.Row([
+            ft.IconButton(ft.Icons.CHEVRON_LEFT, icon_size=16, on_click=_prev,
+                          style=ft.ButtonStyle(padding=4)),
+            ft.Text(f"{year}/{month:02d}", size=13, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+            ft.IconButton(ft.Icons.CHEVRON_RIGHT, icon_size=16, on_click=_next,
+                          style=ft.ButtonStyle(padding=4)),
+        ], alignment=ft.MainAxisAlignment.CENTER, spacing=0)
 
-    def _empty_state(self) -> ft.Container:
-        return ft.Container(
-            content=ft.Column(
-                [
-                    ft.Icon(
-                        ft.Icons.INBOX_ROUNDED,
-                        size=48,
-                        color=COLORS["light_text"],
-                    ),
-                    ft.Text(
-                        "まだ通知はありません",
-                        size=14,
-                        color=COLORS["light_text"],
-                        weight=ft.FontWeight.W_500,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                    ft.Text(
-                        "エディタでルールを作成すると、ここに実行結果が表示されます",
-                        size=12,
-                        color=COLORS["light_text"],
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=8,
-            ),
-            alignment=ft.Alignment(0, 0),
-            padding=ft.padding.symmetric(vertical=60),
+        # 曜日
+        wk = ft.Row(
+            [ft.Container(
+                content=ft.Text(d, size=10, color=LIGHT_TEXT, text_align=ft.TextAlign.CENTER),
+                width=30, alignment=ft.Alignment(0, 0),
+            ) for d in ["月", "火", "水", "木", "金", "土", "日"]],
+            alignment=ft.MainAxisAlignment.CENTER, spacing=1,
         )
 
-    @staticmethod
-    def _feed_card(log_entry: dict, index: int) -> ft.Container:
-        result = log_entry.get("result", "success")
-        icon_name, icon_color = _pick_icon(result)
-        message = log_entry.get("message", "")
-        time_str = log_entry.get("executed_at", "")
-        error_msg = log_entry.get("error_message", "")
-        relative_time = _time_ago(time_str)
-
-        content_items = [
-            ft.Row(
-                [
-                    ft.Container(
-                        content=ft.Icon(icon_name, size=18, color=icon_color),
-                        width=34,
-                        height=34,
-                        bgcolor=f"{icon_color}14",
-                        border_radius=10,
+        # 日付
+        rows = []
+        for week in cal_mod.monthcalendar(year, month):
+            cells = []
+            for day in week:
+                if day == 0:
+                    cells.append(ft.Container(width=30, height=30))
+                else:
+                    is_today = (day == today.day and month == today.month and year == today.year)
+                    has_ev = day in event_days
+                    cells.append(ft.Container(
+                        content=ft.Column([
+                            ft.Text(str(day), size=11,
+                                    weight=ft.FontWeight.W_600 if is_today else ft.FontWeight.W_400,
+                                    color=CARD_BG if is_today else DARK_TEXT,
+                                    text_align=ft.TextAlign.CENTER),
+                            ft.Container(width=4, height=4,
+                                         bgcolor=(CARD_BG if is_today else BLUE) if has_ev else ft.Colors.TRANSPARENT,
+                                         border_radius=4),
+                        ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        width=30, height=30,
+                        bgcolor=BLUE if is_today else ft.Colors.TRANSPARENT,
+                        border_radius=15,
                         alignment=ft.Alignment(0, 0),
-                    ),
-                    ft.Column(
-                        [
-                            ft.Text(
-                                message if message else "(empty)",
-                                size=14,
-                                weight=ft.FontWeight.W_600,
-                                color=COLORS["dark_text"],
-                            ),
-                            ft.Text(
-                                relative_time,
-                                size=11,
-                                color=_TIME_COLOR,
-                            ),
-                        ],
-                        spacing=2,
-                        expand=True,
-                    ),
-                    ft.Container(
-                        content=ft.Text(
-                            result,
-                            size=10,
-                            weight=ft.FontWeight.W_600,
-                            color=icon_color,
-                        ),
-                        bgcolor=f"{icon_color}14",
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                    ),
-                ],
-                spacing=12,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        ]
-
-        if error_msg:
-            content_items.append(
-                ft.Container(
-                    content=ft.Text(
-                        error_msg,
-                        size=11,
-                        color=COLORS["coral"],
-                        selectable=True,
-                    ),
-                    bgcolor=f"{COLORS['coral']}0A",
-                    border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=10, vertical=6),
-                    margin=ft.margin.only(left=46),
-                )
-            )
+                    ))
+            rows.append(ft.Row(cells, alignment=ft.MainAxisAlignment.CENTER, spacing=1))
 
         return ft.Container(
-            content=ft.Column(content_items, spacing=6),
-            bgcolor=COLORS["card_bg"],
-            border_radius=14,
-            padding=ft.padding.symmetric(horizontal=16, vertical=12),
-            border=ft.border.all(1, _SUBTLE_BORDER),
-            animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
+            content=ft.Column([nav, wk, *rows], spacing=2,
+                              horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=12,
+            border=ft.border.all(1, _BORDER),
         )
 
-    # ------------------------------------------------------------------
-    # Log receiving (from poll)
-    # ------------------------------------------------------------------
-    def receive_logs(self, entries: list[str]) -> None:
-        """中央ポーラーから生ログ文字列を受け取りフィードに追加する。"""
-        # Remove empty state if present
-        if (
-            self._feed.controls
-            and len(self._feed.controls) == 1
-            and isinstance(self._feed.controls[0].content, ft.Column)
-        ):
-            first_col = self._feed.controls[0].content
-            if first_col.controls and isinstance(first_col.controls[0], ft.Icon):
-                self._feed.controls.clear()
+    # ==================================================================
+    # Widget: リマインダー
+    # ==================================================================
+    def _widget_reminders(self) -> ft.Container:
+        # machine_logs から reminder のみ取得（タスク管理用）
+        items: list[ft.Control] = []
+        try:
+            logs = db_client.get_machine_logs(limit=30)
+            for entry in logs:
+                if entry.get("action_type") != "reminder":
+                    continue
+                content = entry.get("content", "")
+                items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.PUSH_PIN_ROUNDED, size=16, color=PURPLE),
+                        ft.Text(content, size=12, color=DARK_TEXT, expand=True,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.symmetric(vertical=6),
+                ))
+                if len(items) >= 6:
+                    break
+        except Exception:
+            pass
 
-        for entry in entries:
-            result = "success"
-            icon_color = COLORS["green"]
-            icon_name = ft.Icons.CHECK_CIRCLE_OUTLINE_ROUNDED
-            if "ERROR" in entry:
-                result = "error"
-                icon_color = COLORS["coral"]
-                icon_name = ft.Icons.ERROR_OUTLINE_ROUNDED
-            elif "WARN" in entry:
-                result = "warning"
-                icon_color = COLORS["yellow"]
-                icon_name = ft.Icons.WARNING_AMBER_ROUNDED
+        if not items:
+            items.append(ft.Container(
+                content=ft.Text("リマインダーなし", size=12, color=LIGHT_TEXT, italic=True),
+                padding=ft.padding.symmetric(vertical=8),
+            ))
 
-            card = ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Row(
-                            [
-                                ft.Container(
-                                    content=ft.Icon(icon_name, size=18, color=icon_color),
-                                    width=34,
-                                    height=34,
-                                    bgcolor=f"{icon_color}14",
-                                    border_radius=10,
-                                    alignment=ft.Alignment(0, 0),
-                                ),
-                                ft.Column(
-                                    [
-                                        ft.Text(
-                                            entry,
-                                            size=13,
-                                            weight=ft.FontWeight.W_500,
-                                            color=COLORS["dark_text"],
-                                        ),
-                                        ft.Text(
-                                            "たった今",
-                                            size=11,
-                                            color=_TIME_COLOR,
-                                        ),
-                                    ],
-                                    spacing=2,
-                                    expand=True,
-                                ),
-                                ft.Container(
-                                    content=ft.Text(
-                                        result,
-                                        size=10,
-                                        weight=ft.FontWeight.W_600,
-                                        color=icon_color,
-                                    ),
-                                    bgcolor=f"{icon_color}14",
-                                    border_radius=8,
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                                ),
-                            ],
-                            spacing=12,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        ),
-                    ],
-                    spacing=6,
-                ),
-                bgcolor=COLORS["card_bg"],
-                border_radius=14,
-                padding=ft.padding.symmetric(horizontal=16, vertical=12),
-                border=ft.border.all(1, _SUBTLE_BORDER),
+        def _add(e: ft.ControlEvent) -> None:
+            self._show_add_dialog("reminder")
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.NOTIFICATIONS_NONE_ROUNDED, size=18, color=PURPLE),
+                    ft.Text("リマインダー", size=14, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    ft.Container(expand=True),
+                    ft.IconButton(ft.Icons.ADD_ROUNDED, icon_size=18, icon_color=PURPLE,
+                                  tooltip="追加", style=ft.ButtonStyle(padding=4),
+                                  on_click=_add),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=4),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
+
+    # ==================================================================
+    # Widget: マシンの提案
+    # ==================================================================
+    def _widget_suggestions(self) -> ft.Container:
+        items: list[ft.Control] = []
+        try:
+            logs = db_client.get_machine_logs(limit=20)
+            for entry in logs:
+                if entry.get("action_type") != "calendar_suggest":
+                    continue
+                content = entry.get("content", "")
+                items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.LIGHTBULB_ROUNDED, size=16, color=ORANGE),
+                        ft.Text(content, size=12, color=DARK_TEXT, expand=True,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.TextButton("承認", style=ft.ButtonStyle(
+                            color=GREEN, padding=ft.padding.symmetric(horizontal=6, vertical=0),
+                        ), on_click=lambda e, ent=entry: self._accept_suggestion(ent)),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.symmetric(vertical=4),
+                ))
+                if len(items) >= 5:
+                    break
+        except Exception:
+            pass
+
+        if not items:
+            items.append(ft.Container(
+                content=ft.Text("提案なし", size=12, color=LIGHT_TEXT, italic=True),
+                padding=ft.padding.symmetric(vertical=8),
+            ))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=18, color=ORANGE),
+                    ft.Text("マシンの提案", size=14, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                ], spacing=6),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=4),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
+
+    # ==================================================================
+    # Widget: 直近の予定
+    # ==================================================================
+    def _widget_upcoming(self) -> ft.Container:
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_3days = today_start + timedelta(days=3)
+
+        items: list[ft.Control] = []
+        try:
+            events = db_client.get_events(
+                start_from=today_start.isoformat(), start_to=end_3days.isoformat(),
             )
-            # Insert at top (newest first)
-            self._feed.controls.insert(0, card)
+            for ev in events[:8]:
+                start = ev.get("start_at", "")
+                # 日付と時刻を分割
+                parts = start[:16].split("T")
+                date_part = parts[0][5:] if parts else ""  # MM-DD
+                time_part = parts[1] if len(parts) > 1 else ""
+                source = ev.get("source", "user")
+                items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            width=4, height=32,
+                            bgcolor=PURPLE if source == "machine" else BLUE,
+                            border_radius=2,
+                        ),
+                        ft.Column([
+                            ft.Text(ev.get("title", ""), size=12,
+                                    weight=ft.FontWeight.W_600, color=DARK_TEXT,
+                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                            ft.Text(f"{date_part} {time_part}", size=10, color=LIGHT_TEXT),
+                        ], spacing=1, expand=True),
+                    ], spacing=8),
+                    padding=ft.padding.symmetric(vertical=4),
+                ))
+        except Exception:
+            pass
 
-        # Keep feed manageable
-        if len(self._feed.controls) > 200:
-            self._feed.controls = self._feed.controls[:200]
+        if not items:
+            items.append(ft.Container(
+                content=ft.Text("直近の予定なし", size=12, color=LIGHT_TEXT, italic=True),
+                padding=ft.padding.symmetric(vertical=8),
+            ))
 
-        self._refresh_chips()
+        def _add(e: ft.ControlEvent) -> None:
+            self._show_add_dialog("event")
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.EVENT_ROUNDED, size=18, color=BLUE),
+                    ft.Text("直近の予定", size=14, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    ft.Container(expand=True),
+                    ft.IconButton(ft.Icons.ADD_ROUNDED, icon_size=18, icon_color=BLUE,
+                                  tooltip="追加", style=ft.ButtonStyle(padding=4),
+                                  on_click=_add),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=4),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
+
+    # ==================================================================
+    # Widget: 通知
+    # ==================================================================
+    def _widget_notifications(self) -> ft.Container:
+        items: list[ft.Control] = []
+        try:
+            logs = db_client.get_machine_logs(limit=30)
+            for entry in logs:
+                at = entry.get("action_type", "")
+                if at not in ("notify", "notify_scheduled"):
+                    continue
+                content = entry.get("content", "")
+                time_str = entry.get("triggered_at", "")[:16].replace("T", " ")
+                icon_map = {
+                    "notify": (ft.Icons.NOTIFICATIONS_ACTIVE_ROUNDED, GREEN),
+                    "notify_scheduled": (ft.Icons.SCHEDULE_ROUNDED, BLUE),
+                }
+                ic, clr = icon_map.get(at, (ft.Icons.CIRCLE, MID_TEXT))
+                items.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ic, size=16, color=clr),
+                        ft.Column([
+                            ft.Text(content, size=12, color=DARK_TEXT,
+                                    max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                            ft.Text(time_str, size=10, color=LIGHT_TEXT),
+                        ], spacing=1, expand=True),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.symmetric(vertical=4),
+                ))
+                if len(items) >= 6:
+                    break
+        except Exception:
+            pass
+
+        if not items:
+            items.append(ft.Container(
+                content=ft.Text("通知なし", size=12, color=LIGHT_TEXT, italic=True),
+                padding=ft.padding.symmetric(vertical=8),
+            ))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.NOTIFICATIONS_NONE_ROUNDED, size=18, color=GREEN),
+                    ft.Text("通知", size=14, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=4),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
+
+    # ==================================================================
+    # 提案の承認
+    # ==================================================================
+    def _accept_suggestion(self, entry: dict) -> None:
+        content = entry.get("content", "")
+        title = "承認済みイベント"
+        if "\u300c" in content and "\u300d" in content:
+            title = content.split("\u300c")[1].split("\u300d")[0]
+
+        now = datetime.now(timezone.utc)
+        tomorrow = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+
+        db_client.add_event(title=title, start_at=tomorrow.isoformat(), source="machine")
+        db_client.add_machine_log(
+            action_type="calendar_add",
+            content=f"提案を承認: \u300c{title}\u300d を追加しました",
+        )
         self._page.update()
 
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
-    def _clear_feed(self, e) -> None:
-        self._feed.controls.clear()
-        self._feed.controls.append(self._empty_state())
+    # ==================================================================
+    # 追加ダイアログ
+    # ==================================================================
+    def _show_add_dialog(self, mode: str) -> None:
+        is_reminder = mode == "reminder"
+        dialog_title = "リマインダー追加" if is_reminder else "イベント追加"
+
+        title_field = ft.TextField(
+            label="内容" if is_reminder else "タイトル",
+            autofocus=True,
+        )
+        date_field = ft.TextField(
+            label="通知日時 (空欄で即時)" if is_reminder else "日時 (YYYY-MM-DD HH:MM)",
+            value="" if is_reminder else datetime.now().strftime("%Y-%m-%d %H:%M"),
+            hint_text="YYYY-MM-DD HH:MM",
+        )
+
+        fields: list[ft.Control] = [title_field, date_field]
+        if not is_reminder:
+            note_field = ft.TextField(label="メモ (任意)")
+            fields.append(note_field)
+        else:
+            note_field = None
+
+        def _save(ev: ft.ControlEvent) -> None:
+            text = title_field.value.strip()
+            if not text:
+                return
+
+            date_str = date_field.value.strip()
+
+            if is_reminder:
+                if date_str:
+                    try:
+                        datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        date_field.error_text = "形式: YYYY-MM-DD HH:MM"
+                        self._page.update()
+                        return
+                    db_client.add_machine_log(action_type="reminder",
+                                              content=f"[{date_str}] {text}")
+                else:
+                    db_client.add_machine_log(action_type="reminder", content=text)
+            else:
+                if not date_str:
+                    date_field.error_text = "日時を入力してください"
+                    self._page.update()
+                    return
+                try:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+                    dt = dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    date_field.error_text = "形式: YYYY-MM-DD HH:MM"
+                    self._page.update()
+                    return
+                db_client.add_event(
+                    title=text, start_at=dt.isoformat(),
+                    note=(note_field.value.strip() if note_field else ""),
+                    source="user",
+                )
+
+            dialog.open = False
+            self._page.update()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text(dialog_title, size=16, weight=ft.FontWeight.W_600),
+            content=ft.Column(fields, tight=True, spacing=12),
+            actions=[
+                ft.TextButton("キャンセル",
+                              on_click=lambda ev: setattr(dialog, "open", False) or self._page.update()),
+                ft.ElevatedButton("追加", bgcolor=PURPLE if is_reminder else BLUE,
+                                  color=CARD_BG, on_click=_save),
+            ],
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
         self._page.update()
