@@ -22,13 +22,15 @@ from ..exceptions import CompileError
 from .app import COLORS
 
 _DEFAULT_DSL = """\
+# === オートメーション（Save & Registerで定期実行） ===
 # 例: バイトが週4以上なら回復タイムを提案
 when calendar.read("バイト").count_this_week >= 4:
   calendar.suggest("回復タイム", on="next_free_morning")
 
-# 例: 毎日のリマインド
-every day:
-  notify("今日も頑張ろう！")
+# === スキル（Runで即時1回実行） ===
+# 例: サイトを取得してホームにウィジェット表示
+# result = web.fetch("https://example.com")
+# widget.show("まとめ", result)
 """
 
 _BORDER = "#E8E4DC"
@@ -275,6 +277,18 @@ class EditorView:
                     on_click=self._on_compile,
                 ),
                 ft.ElevatedButton(
+                    "Run",
+                    icon=ft.Icons.PLAY_ARROW_ROUNDED,
+                    bgcolor=COLORS["blue"],
+                    color=COLORS["card_bg"],
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=12),
+                        elevation=0,
+                        padding=ft.padding.symmetric(horizontal=20, vertical=12),
+                    ),
+                    on_click=self._on_run,
+                ),
+                ft.ElevatedButton(
                     "Save & Register",
                     icon=ft.Icons.SAVE_ROUNDED,
                     bgcolor=COLORS["green"],
@@ -326,6 +340,24 @@ class EditorView:
                         padding=ft.padding.symmetric(horizontal=14, vertical=10),
                     ),
                     on_click=lambda e: self._insert_snippet('calendar.add("", start="")'),
+                ),
+                ft.OutlinedButton(
+                    "web", style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        side=ft.BorderSide(1, COLORS["purple"]),
+                        color=COLORS["purple"],
+                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                    ),
+                    on_click=lambda e: self._insert_snippet('result = web.fetch("https://")\nwidget.show("", result)'),
+                ),
+                ft.OutlinedButton(
+                    "traits", style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        side=ft.BorderSide(1, COLORS["orange"]),
+                        color=COLORS["orange"],
+                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                    ),
+                    on_click=lambda e: self._insert_snippet('traits:\n  '),
                 ),
             ], spacing=10),
             padding=ft.padding.symmetric(vertical=4),
@@ -805,7 +837,10 @@ class EditorView:
             self._python_preview.value = result["code"]
             self._log(f'コンパイル完了: "{result["title"]}"', COLORS["green"])
             trigger = result.get("trigger", {})
-            if trigger.get("type") == "cron":
+            tt = trigger.get("type", "interval")
+            if tt == "once":
+                self._log("トリガー: 即時実行（Runで実行）", COLORS["mid_text"])
+            elif tt == "cron":
                 self._log(f'トリガー: 毎日 {trigger["hour"]:02d}:{trigger["minute"]:02d}', COLORS["mid_text"])
             else:
                 self._log(f'トリガー: {trigger.get("seconds", 3600)}秒ごと', COLORS["mid_text"])
@@ -814,6 +849,41 @@ class EditorView:
             self._log(f"コンパイルエラー: {e}", COLORS["coral"])
             self._python_preview.value = f"# エラー: {e}"
             self._page.update()
+
+    def _on_run(self, e: ft.ControlEvent) -> None:
+        """コンパイル → 即時1回実行（スケジューラ登録しない）。"""
+        self._active_tab.dsl_text = self._editor.value or ""
+        code = self._active_tab.dsl_text.strip()
+        threading.Thread(target=self._run_once, args=(code,), daemon=True).start()
+
+    def _run_once(self, code: str) -> None:
+        from ..sandbox.runner import run_sandboxed
+        from ..exceptions import SandboxError
+
+        if not code:
+            self._log("エディタが空です", COLORS["yellow"])
+            return
+
+        # コンパイル
+        if self._active_tab.compiled is None:
+            self._compile(code)
+        if self._active_tab.compiled is None:
+            return
+
+        result = self._active_tab.compiled
+        python_code = result["code"]
+
+        self._log("実行中…", COLORS["blue"])
+        self._python_preview.value = "# 実行中…"
+        self._page.update()
+        try:
+            output = run_sandboxed(python_code, timeout=30, capture=True)
+            self._python_preview.value = f"# 実行結果\n# {'=' * 40}\n\n{output or '(出力なし)'}"
+            self._log("実行完了", COLORS["green"])
+        except SandboxError as e:
+            self._python_preview.value = f"# 実行エラー\n# {'=' * 40}\n\n{e}"
+            self._log(f"実行エラー: {e}", COLORS["coral"])
+        self._page.update()
 
     def _on_save(self, e: ft.ControlEvent) -> None:
         self._active_tab.dsl_text = self._editor.value or ""

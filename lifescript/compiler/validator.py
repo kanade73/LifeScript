@@ -59,6 +59,8 @@ class _Visitor(ast.NodeVisitor):
 
 def validate_python(code: str) -> None:
     """許可されていない構文が含まれていれば ValidationError を送出する。"""
+    if not code or not code.strip():
+        return  # traits-only スクリプトなど、コードが空の場合はOK
     try:
         tree = ast.parse(code)
     except SyntaxError as e:

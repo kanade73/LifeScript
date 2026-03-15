@@ -18,6 +18,7 @@ from .database.client import db_client
 from .functions import FUNCTION_DESCRIPTIONS
 from .functions.calendar import calendar_add, calendar_suggest
 from .functions.notify import notify
+from .traits import gather_all_traits, format_traits_for_prompt
 from . import log_queue
 
 _JST = timezone(timedelta(hours=9))
@@ -76,6 +77,12 @@ _CONCIERGE_PROMPT = """\
 ## 現在の日時
 {now}
 
+## ユーザーの traits（生活文脈の自己定義）
+{traits}
+
+traits はユーザーが LifeScript で自分の生活パターンや価値観を言語化したものです。
+回答や提案をする際は traits を考慮し、必要に応じて「あなたの traits に基づくと〜」と根拠を示してください。
+
 ## あなたができること
 
 ### 1. 即時アクション（ユーザーの指示で直接実行）
@@ -103,6 +110,29 @@ IDEにコピペして使ってもらう前提。
 ### 3. 会話・質問への回答
 予定の確認、生活のアドバイスなど。
 
+### 4. リッチなサマリー・概要
+ユーザーが「今週の予定は？」「最近何があった？」「通知の状況は？」などと聞いたら、
+持っている全コンテキストを使って**見やすく整理されたサマリー**を返す。
+
+サマリーの書き方:
+- 日付ごと・カテゴリごとに整理する
+- 重要なものは強調する（「**バイト**」など）
+- 空き時間や傾向（忙しさ、偏り）にも言及する
+- 提案やアドバイスがあれば最後に添える
+- 絵文字は使わない
+
+例:
+```
+今週の予定（3/15〜3/21）
+
+月曜: バイト 10:00-14:00
+火曜: 予定なし（空き）
+水曜: ミーティング 15:00 / バイト 18:00-22:00
+...
+
+→ 今週はバイトが3回。木曜が空いているので休息日にするのも良さそうです。
+```
+
 ## 使える関数
 {functions_section}
 
@@ -115,6 +145,9 @@ IDEにコピペして使ってもらう前提。
 ## 登録済みスクリプト
 {active_scripts}
 
+## メモリ（ユーザーのパーソナリティ）
+{memory}
+
 ## 応答ルール
 1. 短く簡潔に答える（日本語）
 2. 予定の追加や通知は即座にアクションブロックで実行する
@@ -122,6 +155,8 @@ IDEにコピペして使ってもらう前提。
 4. ユーザーの予定を把握した上で提案や回答をする
 5. 日付・時刻は必ず具体的な値にする（「明日」→実際の日付）
 6. フレンドリーだが簡潔なトーン
+7. 予定の概要やサマリーを聞かれたら、日別に整理して見やすく回答する
+8. 通知やスクリプトの状況を聞かれたら、わかりやすく一覧化する
 """
 
 
@@ -183,6 +218,22 @@ def _gather_recent_logs() -> str:
         return "（取得エラー）"
 
 
+def _gather_memory() -> str:
+    try:
+        logs = db_client.get_machine_logs(limit=100)
+        memories = [l for l in logs if l.get("action_type") == "memory"]
+        if not memories:
+            return "（なし）"
+        lines = []
+        for m in memories:
+            content = m.get("content", "").strip()
+            if content:
+                lines.append(f"- {content}")
+        return "\n".join(lines) if lines else "（なし）"
+    except Exception:
+        return "（取得エラー）"
+
+
 def _gather_active_scripts() -> str:
     try:
         scripts = db_client.get_scripts()
@@ -240,12 +291,15 @@ class ChatEngine:
 
     def _build_system_prompt(self) -> str:
         now = datetime.now(_JST)
+        traits = gather_all_traits()
         return _CONCIERGE_PROMPT.format(
             now=now.strftime("%Y-%m-%d %H:%M (%A)"),
+            traits=format_traits_for_prompt(traits),
             functions_section=_build_functions_section(),
             calendar_context=_gather_calendar_context(),
             recent_logs=_gather_recent_logs(),
             active_scripts=_gather_active_scripts(),
+            memory=_gather_memory(),
         )
 
     def send(self, user_message: str) -> tuple[str, list[dict]]:

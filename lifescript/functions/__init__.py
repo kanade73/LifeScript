@@ -5,6 +5,8 @@
 
 from .notify import notify
 from .calendar import calendar_add, calendar_read, calendar_suggest
+from .web import web_fetch
+from .widget import widget_show
 
 # DSL内で使える関数名 → 実際のPython関数のマッピング
 FUNCTION_MAP: dict[str, callable] = {
@@ -12,6 +14,8 @@ FUNCTION_MAP: dict[str, callable] = {
     "calendar_add": calendar_add,
     "calendar_read": calendar_read,
     "calendar_suggest": calendar_suggest,
+    "web_fetch": web_fetch,
+    "widget_show": widget_show,
 }
 
 # バリデータ用: 許可される関数名の集合
@@ -38,5 +42,15 @@ FUNCTION_DESCRIPTIONS: list[dict[str, str]] = [
         "name": "calendar_suggest",
         "signature": 'calendar_suggest(title: str, on: str, note: str = "")',
         "description": "イベントの提案をmachine_logsに記録。ユーザーが承認するとcalendar_addされる。",
+    },
+    {
+        "name": "web_fetch",
+        "signature": 'web_fetch(url: str, summary: bool = True) -> str',
+        "description": "URLの内容を取得しLLMで要約して返す。summary=Falseで生テキスト。widget_showと組み合わせてホーム画面に表示できる。",
+    },
+    {
+        "name": "widget_show",
+        "signature": 'widget_show(name: str, content: str, icon: str = "article")',
+        "description": "ホーム画面にカスタムウィジェットを表示/更新する。nameがウィジェットのタイトルになる。スクリプトが実行されるたびに内容が最新化される。",
     },
 ]

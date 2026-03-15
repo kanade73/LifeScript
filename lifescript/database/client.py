@@ -162,6 +162,9 @@ class _SupabaseBackend:
     def delete_event(self, event_id: int) -> None:
         self._client.table("calendar_events").delete().eq("id", event_id).execute()
 
+    def update_event(self, event_id: int, **kwargs: Any) -> None:
+        self._client.table("calendar_events").update(kwargs).eq("id", event_id).execute()
+
     # -- Machine Logs ---------------------------------------------------
     def add_machine_log(
         self,
@@ -186,6 +189,9 @@ class _SupabaseBackend:
             .execute()
         )
         return resp.data
+
+    def delete_machine_log(self, log_id: int) -> None:
+        self._client.table("machine_logs").delete().eq("id", log_id).execute()
 
     # -- Streaks --------------------------------------------------------
     def get_streak(self, habit_name: str, user_id: str = "local") -> int:
@@ -331,6 +337,11 @@ class _SQLiteBackend:
     def delete_event(self, event_id: int) -> None:
         self._execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
 
+    def update_event(self, event_id: int, **kwargs: Any) -> None:
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        vals = tuple(kwargs.values()) + (event_id,)
+        self._execute(f"UPDATE calendar_events SET {sets} WHERE id = ?", vals)
+
     # -- Machine Logs ---------------------------------------------------
     def add_machine_log(
         self,
@@ -350,6 +361,9 @@ class _SQLiteBackend:
             "SELECT * FROM machine_logs WHERE user_id = ? ORDER BY id DESC LIMIT ?",
             (user_id, limit),
         )
+
+    def delete_machine_log(self, log_id: int) -> None:
+        self._execute("DELETE FROM machine_logs WHERE id = ?", (log_id,))
 
     # -- Streaks --------------------------------------------------------
     def get_streak(self, habit_name: str, user_id: str = "local") -> int:
@@ -439,12 +453,18 @@ class DatabaseClient:
     def delete_event(self, event_id: int) -> None:
         self._b().delete_event(event_id)
 
+    def update_event(self, event_id: int, **kwargs: Any) -> None:
+        self._b().update_event(event_id, **kwargs)
+
     # Machine Logs
     def add_machine_log(self, action_type: str, content: str, user_id: str = "local") -> dict:
         return self._b().add_machine_log(action_type, content, user_id)
 
     def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
         return self._b().get_machine_logs(user_id, limit)
+
+    def delete_machine_log(self, log_id: int) -> None:
+        self._b().delete_machine_log(log_id)
 
     # Streaks
     def get_streak(self, habit_name: str, user_id: str = "local") -> int:

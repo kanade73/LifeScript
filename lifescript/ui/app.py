@@ -113,7 +113,8 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 scheduler.start()
                 scheduler.load_from_db()
 
-            home_view = HomeView(page=page, scheduler=scheduler)
+            home_view = HomeView(page=page, scheduler=scheduler,
+                                on_navigate=lambda idx: _on_nav(idx))
             editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
             dashboard_view = DashboardView(page=page, scheduler=scheduler)
             reference_view = ReferenceView(page=page)

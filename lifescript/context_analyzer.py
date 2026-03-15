@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import litellm
 
 from .database.client import db_client
+from .traits import gather_all_traits, format_traits_for_prompt
 from . import log_queue
 
 _JST = timezone(timedelta(hours=9))
@@ -21,20 +22,30 @@ _JST = timezone(timedelta(hours=9))
 _ANALYSIS_PROMPT = """\
 あなたは LifeScript の「マシン」です。ユーザーの生活文脈を読み取り、能動的に提案します。
 
-以下のユーザーのカレンダー情報と行動ログを分析し、有用な提案を生成してください。
+以下のユーザーの **traits（自己定義した生活文脈）** とカレンダー情報を分析し、有用な提案を生成してください。
 
 ## あなたの役割
-- ユーザーが設定していない行動まで提案・実行する
+- ユーザーが traits で定義した文脈とメモリに記録されたパーソナリティを最優先で尊重する
+- traits とメモリに基づいて、ユーザーが設定していない行動まで提案する
 - 休息、運動、準備時間など、ユーザーの生活を改善する提案をする
 - 同じ種類の予定が連続している場合は休息を提案する
 - 空き時間を有効活用する提案をする
 - 過去にした提案と重複しないこと
+
+## ユーザーの traits（生活文脈の自己定義）
+{traits}
+
+traits はユーザーが LifeScript で自分の生活パターンや価値観を言語化したものです。
+提案の根拠として traits を積極的に引用してください。
 
 ## 現在の日時
 {now}
 
 ## 今週のカレンダー ({week_start} 〜 {week_end})
 {calendar_summary}
+
+## メモリ（ユーザーのパーソナリティ）
+{memory}
 
 ## 最近の提案履歴（重複を避けること）
 {recent_suggestions}
@@ -50,7 +61,7 @@ JSON配列で提案を返してください。提案が無い場合は空配列 
     "event_title": "追加するイベントのタイトル（承認時に使う）",
     "event_date": "YYYY-MM-DD",
     "event_time": "HH:MM",
-    "reason": "提案の理由（1文）"
+    "reason": "この提案の根拠（どの trait や状況に基づくか明記）"
   }}
 ]
 ```
@@ -60,6 +71,7 @@ JSON配列で提案を返してください。提案が無い場合は空配列 
 - 具体的な日付と時刻を含めること
 - 日本語で書くこと
 - event_date は今日以降の日付にすること
+- reason には必ず「どの trait またはメモリに基づくか」を含めること（traits やメモリがある場合）
 - JSON のみ出力。説明文やマークダウンは不要
 """
 
@@ -90,13 +102,20 @@ class ContextAnalyzer:
             # ── コンテキスト収集 ──────────────────────────────
             calendar_summary = self._gather_calendar(now)
             recent_suggestions = self._gather_recent_suggestions()
+            traits = gather_all_traits()
+            traits_text = format_traits_for_prompt(traits)
 
             if not calendar_summary.strip():
                 calendar_summary = "（今週の予定はありません）"
 
+            log_queue.log("Analyzer", f"traits: {len(traits)}件の文脈定義を読み込み")
+
             # ── LLM呼び出し ───────────────────────────────────
             week_start = (now - timedelta(days=now.weekday())).strftime("%m/%d")
             week_end = (now + timedelta(days=6 - now.weekday())).strftime("%m/%d")
+
+            # メモリ収集
+            memory_text = self._gather_memory()
 
             prompt = _ANALYSIS_PROMPT.format(
                 now=now.strftime("%Y-%m-%d %H:%M (%A)"),
@@ -104,6 +123,8 @@ class ContextAnalyzer:
                 week_end=week_end,
                 calendar_summary=calendar_summary,
                 recent_suggestions=recent_suggestions or "（なし）",
+                traits=traits_text,
+                memory=memory_text,
             )
 
             response = litellm.completion(
@@ -209,6 +230,22 @@ class ContextAnalyzer:
 
         except Exception:
             return ""
+
+    def _gather_memory(self) -> str:
+        """手動追加されたメモリをテキストにまとめる。"""
+        try:
+            logs = db_client.get_machine_logs(limit=100)
+            memories = [l for l in logs if l.get("action_type") == "memory"]
+            if not memories:
+                return "（なし）"
+            lines = []
+            for m in memories:
+                content = m.get("content", "").strip()
+                if content:
+                    lines.append(f"- {content}")
+            return "\n".join(lines) if lines else "（なし）"
+        except Exception:
+            return "（取得エラー）"
 
     def _gather_recent_suggestions(self) -> str:
         """最近の提案をテキストにまとめる（重複防止用）。"""

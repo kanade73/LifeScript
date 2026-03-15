@@ -73,9 +73,13 @@ def reset_rate_limits() -> None:
 
 
 def run_sandboxed(
-    python_code: str, *, timeout: int = _EXEC_TIMEOUT, rule_id: str | None = None
-) -> None:
-    """Python コードを RestrictedPython 内でタイムアウト付きで実行する。"""
+    python_code: str, *, timeout: int = _EXEC_TIMEOUT, rule_id: str | None = None,
+    capture: bool = False,
+) -> str | None:
+    """Python コードを RestrictedPython 内でタイムアウト付きで実行する。
+
+    capture=True の場合、print出力とユーザー定義変数の値を文字列で返す。
+    """
     _check_rate_limit(rule_id)
 
     try:
@@ -106,3 +110,36 @@ def run_sandboxed(
     if result[0] is not None:
         e = result[0]
         raise SandboxError(f"{type(e).__name__}: {e}") from e
+
+    if not capture:
+        return None
+
+    # ── 出力の収集 ──
+    output_parts: list[str] = []
+
+    # print() の出力を回収
+    printed = globs.get("_print")
+    if printed and hasattr(printed, "__call__"):
+        # PrintCollector はインスタンス化されない場合がある
+        pass
+    # RestrictedPython の PrintCollector: 各スコープの _print が PrintCollector インスタンス
+    # exec 後の globs にユーザー変数として残っている可能性
+    for key, val in globs.items():
+        if isinstance(val, PrintCollector):
+            output_parts.append("".join(val.txt))
+
+    # ユーザー定義変数を出力
+    _skip = set(_build_globals().keys()) | {"__builtins__", "_print_", "_print",
+                                              "_getiter_", "_getattr_",
+                                              "_iter_unpack_sequence_"}
+    user_vars = {k: v for k, v in globs.items()
+                 if k not in _skip and not k.startswith("_")}
+    if user_vars:
+        output_parts.append("--- 変数 ---")
+        for k, v in user_vars.items():
+            val_str = str(v)
+            if len(val_str) > 500:
+                val_str = val_str[:500] + "…"
+            output_parts.append(f"{k} = {val_str}")
+
+    return "\n".join(output_parts) if output_parts else "(出力なし)"
