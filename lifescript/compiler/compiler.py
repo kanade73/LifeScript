@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 import litellm
@@ -84,6 +85,160 @@ LifeScript が無効、またはサポート外の機能を使用している場
 # Compile cache
 _cache: dict[str, dict] = {}
 _MAX_CACHE = 128
+
+_JST = timezone(timedelta(hours=9))
+_DAY_MAP = {
+    "月": 0,
+    "火": 1,
+    "水": 2,
+    "木": 3,
+    "金": 4,
+    "土": 5,
+    "日": 6,
+}
+_DAILY_KEYS = {"毎日", "daily", "everyday"}
+
+
+def _strip_quotes(text: str) -> str:
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        return text[1:-1]
+    return text
+
+
+def _parse_hhmm(text: str) -> time:
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        raise CompileError(f"時刻形式が正しくありません。: {text} (HH:MM)")
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise CompileError(f"時刻形式が正しくありません。: {text}")
+    return time(hour=hour, minute=minute)
+
+
+def _parse_time_expr(text: str) -> list[tuple[time, time]]:
+    text = _strip_quotes(text)
+    if "-" in text:
+        start_str, end_str = [s.strip() for s in text.split("-", 1)]
+        start_t = _parse_hhmm(start_str)
+        end_t = _parse_hhmm(end_str)
+        start_dt = datetime.combine(date.today(), start_t)
+        end_dt = datetime.combine(date.today(), end_t)
+        if end_dt <= start_dt:
+            raise CompileError(f"時間範囲が正しくありません。: {text}")
+
+        slots: list[tuple[time, time]] = []
+        cur = start_dt
+        while cur < end_dt:
+            nxt = min(cur + timedelta(minutes=10), end_dt)
+            slots.append((cur.time(), nxt.time()))
+            cur = nxt
+        return slots
+
+    point = _parse_hhmm(text)
+    start_dt = datetime.combine(date.today(), point)
+    end_dt = start_dt + timedelta(minutes=10)
+    return [(start_dt.time(), end_dt.time())]
+
+
+def _next_dates_for_weekday(weekday: int, weeks: int = 4) -> list[date]:
+    today = datetime.now(_JST).date()
+    this_week_start = today - timedelta(days=today.weekday())
+    dates: list[date] = []
+    for week in range(weeks):
+        dates.append(this_week_start + timedelta(days=weekday + 7 * week))
+    return dates
+
+
+def _target_weekdays(day_key: str) -> list[int]:
+    if day_key in _DAILY_KEYS:
+        return [0, 1, 2, 3, 4, 5, 6]
+    if day_key in _DAY_MAP:
+        return [_DAY_MAP[day_key]]
+    raise CompileError(f"repeat_10min の曜日が正しくありません。: {day_key}")
+
+
+def _to_iso(d: date, t: time) -> str:
+    return datetime.combine(d, t, tzinfo=_JST).isoformat()
+
+
+def _expand_repeat_10min_block(block_lines: list[str], base_indent: int) -> list[str]:
+    current_day: str | None = None
+    generated: list[str] = []
+
+    for raw_line in block_lines:
+        if not raw_line.strip() or raw_line.strip().startswith("#"):
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = raw_line.strip()
+
+        if indent == base_indent + 2 and stripped.endswith(":"):
+            day = _strip_quotes(stripped[:-1].strip())
+            _target_weekdays(day)
+            current_day = day
+            continue
+
+        if indent >= base_indent + 4 and ":" in stripped and current_day is not None:
+            pair = re.match(r"^(.+):\s*(.+)$", stripped)
+            if not pair:
+                raise CompileError(f"repeat_10min の行形式が正しくありません。: {stripped}")
+
+            time_expr = pair.group(1).strip()
+            title = _strip_quotes(pair.group(2).strip())
+            if not title:
+                raise CompileError("repeat_10min の予定名が空です")
+
+            slots = _parse_time_expr(time_expr)
+            for weekday in _target_weekdays(current_day):
+                for d in _next_dates_for_weekday(weekday, weeks=4):
+                    for start_t, end_t in slots:
+                        title_escaped = title.replace('"', '\\"')
+                        generated.append(
+                            f'calendar.add("{title_escaped}", start="{_to_iso(d, start_t)}", '
+                            f'end="{_to_iso(d, end_t)}", note="repeat_10min")'
+                        )
+
+    if not generated:
+        raise CompileError("repeat_10min ブロックが空か、形式が正しくありません。")
+
+    return generated
+
+
+def _expand_repeat_10min(lifescript_code: str) -> str:
+    lines = lifescript_code.splitlines()
+    if not lines:
+        return lifescript_code
+
+    output: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.match(r"^(\s*)repeat_10min:\s*$", line)
+        if not match:
+            output.append(line)
+            i += 1
+            continue
+
+        base_indent = len(match.group(1))
+        i += 1
+        block_lines: list[str] = []
+        while i < len(lines):
+            cur = lines[i]
+            if not cur.strip():
+                block_lines.append(cur)
+                i += 1
+                continue
+            cur_indent = len(cur) - len(cur.lstrip(" "))
+            if cur_indent <= base_indent:
+                break
+            block_lines.append(cur)
+            i += 1
+
+        output.extend(_expand_repeat_10min_block(block_lines, base_indent=base_indent))
+
+    return "\n".join(output)
 
 
 def _build_system_prompt() -> str:
@@ -164,7 +319,9 @@ class Compiler:
 
     def compile(self, lifescript_code: str) -> dict[str, Any]:
         """LifeScript を Python にコンパイルする。"""
-        key = _cache_key(lifescript_code)
+        expanded_code = _expand_repeat_10min(lifescript_code)
+
+        key = _cache_key(expanded_code)
         if key in _cache:
             return _cache[key]
 
@@ -173,7 +330,7 @@ class Compiler:
                 {"role": "system", "content": _build_system_prompt()},
                 {
                     "role": "user",
-                    "content": f"以下の LifeScript をコンパイルしてください:\n\n{lifescript_code}",
+                    "content": f"以下の LifeScript をコンパイルしてください:\n\n{expanded_code}",
                 },
             ]
         )
@@ -190,7 +347,9 @@ class Compiler:
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
         """実行時エラーが発生した Python を LLM に修正させる。"""
-        key = _cache_key(lifescript_code)
+        expanded_code = _expand_repeat_10min(lifescript_code)
+
+        key = _cache_key(expanded_code)
         _cache.pop(key, None)
 
         content = self._call_llm(
@@ -199,7 +358,7 @@ class Compiler:
                 {
                     "role": "user",
                     "content": (
-                        f"以下の LifeScript:\n\n{lifescript_code}\n\n"
+                        f"以下の LifeScript:\n\n{expanded_code}\n\n"
                         f"は次の Python にコンパイルされました:\n\n{python_code}\n\n"
                         f"しかし実行時に以下のエラーが発生しました:\n\n{error}\n\n"
                         "修正したコンパイル結果を返してください。"
