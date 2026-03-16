@@ -44,6 +44,15 @@ def calendar_add(
     note: str = "",
 ) -> dict:
     """カレンダーにイベントを追加する。"""
+    existing = db_client.get_events(start_from=start, start_to=start)
+    for event in existing:
+        if event.get("start_at") == start and event.get("source") == "machine":
+            log_queue.log(
+                "calendar",
+                f"同時刻イベントをスキップ: {title} ({start}) / existing={event.get('title', '')}",
+            )
+            return event
+
     event = db_client.add_event(
         title=title,
         start_at=start,

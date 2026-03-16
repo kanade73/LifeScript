@@ -13,6 +13,13 @@ from .. import log_queue
 def notify(message: str, at: str | None = None) -> None:
     """指定時刻（または即時）に通知を送る。"""
     if at:
+        recent_logs = db_client.get_machine_logs(limit=500)
+        marker = f"[予約通知 at={at}]"
+        for log in recent_logs:
+            if log.get("action_type") == "notify_scheduled" and marker in log.get("content", ""):
+                log_queue.log("notify", f"同時刻の予約通知をスキップ: {at}")
+                return
+
         db_client.add_machine_log(
             action_type="notify_scheduled",
             content=f"[予約通知 at={at}] {message}",
