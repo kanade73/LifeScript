@@ -43,6 +43,22 @@ class TestNotify:
         assert any("予約通知" in l["content"] for l in logs)
         assert any(l["action_type"] == "notify_scheduled" for l in logs)
 
+    def test_notify_scheduled_skips_same_time(self, db):
+        from lifescript.functions.notify import notify
+
+        at = "2026-03-17T09:00:00+09:00"
+        notify("1件目", at=at)
+        notify("2件目", at=at)
+
+        logs = db.get_machine_logs(limit=200)
+        scheduled = [
+            l
+            for l in logs
+            if l.get("action_type") == "notify_scheduled"
+            and f"[予約通知 at={at}]" in l.get("content", "")
+        ]
+        assert len(scheduled) == 1
+
 
 class TestCalendar:
     def test_calendar_add(self, db):
@@ -63,3 +79,14 @@ class TestCalendar:
         logs = db.get_machine_logs()
         assert any(l["action_type"] == "calendar_suggest" for l in logs)
         assert any("回復タイム" in l["content"] for l in logs)
+
+    def test_calendar_add_skips_same_time(self, db):
+        from lifescript.functions.calendar import calendar_add
+
+        start = "2026-03-17T09:00:00+09:00"
+        first = calendar_add("10分タスク", start, end="2026-03-17T09:10:00+09:00")
+        second = calendar_add("別タイトル", start, end="2026-03-17T09:10:00+09:00")
+
+        events = db.get_events(start_from=start, start_to=start)
+        assert len(events) == 1
+        assert first["id"] == second["id"]

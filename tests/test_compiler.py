@@ -66,3 +66,46 @@ class TestCompiler:
         with patch("litellm.completion", return_value=_mock_llm_response(result_dict)):
             with pytest.raises((CompileError, ValidationError)):
                 compiler.compile("import os")
+
+    def test_compile_repeat_10min_expansion(self, compiler):
+        result_dict = {
+            "title": "展開テスト",
+            "trigger": {"type": "interval", "seconds": 3600},
+            "code": 'notify("ok")',
+        }
+        dsl = """
+repeat_10min:
+  月:
+    09:00-09:20: 英語
+  火:
+    10:00: ストレッチ
+""".strip()
+
+        with patch("litellm.completion", return_value=_mock_llm_response(result_dict)) as mock:
+            compiler.compile(dsl)
+
+        args = mock.call_args.kwargs
+        user_msg = args["messages"][1]["content"]
+        assert "calendar.add(\"英語\"" in user_msg
+        assert "calendar.add(\"ストレッチ\"" in user_msg
+        assert "note=\"repeat_10min\"" in user_msg
+
+    def test_compile_repeat_10min_daily_expansion(self, compiler):
+        result_dict = {
+            "title": "日次展開テスト",
+            "trigger": {"type": "interval", "seconds": 3600},
+            "code": 'notify("ok")',
+        }
+        dsl = """
+repeat_10min:
+  毎日:
+    07:00: 水やり
+""".strip()
+
+        with patch("litellm.completion", return_value=_mock_llm_response(result_dict)) as mock:
+            compiler.compile(dsl)
+
+        args = mock.call_args.kwargs
+        user_msg = args["messages"][1]["content"]
+        assert user_msg.count("calendar.add(\"水やり\"") == 28
+        assert "note=\"repeat_10min\"" in user_msg
