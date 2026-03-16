@@ -1,0 +1,417 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		20D60F2B896A369D70B9EBF0 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A871040D788F1C3A54896FD7 /* Supabase */; };
+		299383E4AB6588FFCA545767 /* MemoryTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C3701780E5564C00944C2F /* MemoryTab.swift */; };
+		324D596521949EEE91C83B27 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD2168696A20AAC797A8F10 /* MainTabView.swift */; };
+		32FA8EB344B3EF4AB4D8EBFA /* EventFormSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D73C47DE6C1EABA4951C303F /* EventFormSheet.swift */; };
+		98635C5C51D0104B898D1E83 /* NotificationsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFE0E4CB73918B274D9E7118 /* NotificationsTab.swift */; };
+		ADC0FC25B78F28957891BA5E /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C021C66CD0B33EE3F51D1A51 /* AuthManager.swift */; };
+		BCE0004961EB62225988EA1C /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D7C97A04A3426911DA7A53 /* Color+Hex.swift */; };
+		C3A7F300B7C56B5DCE43036A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2D32B7B1316A62911512967 /* Models.swift */; };
+		D95A36181BF4C2D4B5C050A0 /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFC4DB6101DF7AF9AF6DBD3D /* HomeTab.swift */; };
+		E174278119692BC64C09F441 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F3E78C50DFEBC16DC310F24 /* LoginView.swift */; };
+		E5E0FB49DA885EDBDBAFD3B1 /* LifeScriptApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D9B169164B55B697CC9163 /* LifeScriptApp.swift */; };
+		F5D72020D5419E3E33320932 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52111902163D50B2849268E0 /* SupabaseClient.swift */; };
+		F9F67CCA49739D75D2D38AC2 /* DataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA585FA48D0AE03E61ED6C7 /* DataService.swift */; };
+		FB6EF3FC65D1C8F710F25337 /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15A07EA88FAF9D6B5BCE09A /* SettingsTab.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2928D0FBE473451F745C5288 /* LifeScript.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeScript.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		51D7C97A04A3426911DA7A53 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
+		52111902163D50B2849268E0 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
+		6F3E78C50DFEBC16DC310F24 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		95C3701780E5564C00944C2F /* MemoryTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryTab.swift; sourceTree = "<group>"; };
+		9AA585FA48D0AE03E61ED6C7 /* DataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataService.swift; sourceTree = "<group>"; };
+		ABD2168696A20AAC797A8F10 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		AFE0E4CB73918B274D9E7118 /* NotificationsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsTab.swift; sourceTree = "<group>"; };
+		B15A07EA88FAF9D6B5BCE09A /* SettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTab.swift; sourceTree = "<group>"; };
+		B2D32B7B1316A62911512967 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		C021C66CD0B33EE3F51D1A51 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		D73C47DE6C1EABA4951C303F /* EventFormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventFormSheet.swift; sourceTree = "<group>"; };
+		DFC4DB6101DF7AF9AF6DBD3D /* HomeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTab.swift; sourceTree = "<group>"; };
+		F4D9B169164B55B697CC9163 /* LifeScriptApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeScriptApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8C4104D72C804FBF5C416284 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				20D60F2B896A369D70B9EBF0 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		177869BBC61A74FCD0A537E1 = {
+			isa = PBXGroup;
+			children = (
+				48CE88856E94E069B46F3A5F /* LifeScript */,
+				7DD5CB2F3C18BEC25FCF6DA2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1BBD60137AF6A8A1929BB06F /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				D73C47DE6C1EABA4951C303F /* EventFormSheet.swift */,
+				DFC4DB6101DF7AF9AF6DBD3D /* HomeTab.swift */,
+				6F3E78C50DFEBC16DC310F24 /* LoginView.swift */,
+				ABD2168696A20AAC797A8F10 /* MainTabView.swift */,
+				95C3701780E5564C00944C2F /* MemoryTab.swift */,
+				AFE0E4CB73918B274D9E7118 /* NotificationsTab.swift */,
+				B15A07EA88FAF9D6B5BCE09A /* SettingsTab.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		2B7259603A75CC59E868F0CD /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				51D7C97A04A3426911DA7A53 /* Color+Hex.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		2D2585D71D8F79DB04BA48F2 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				C021C66CD0B33EE3F51D1A51 /* AuthManager.swift */,
+				9AA585FA48D0AE03E61ED6C7 /* DataService.swift */,
+				52111902163D50B2849268E0 /* SupabaseClient.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		48CE88856E94E069B46F3A5F /* LifeScript */ = {
+			isa = PBXGroup;
+			children = (
+				F4D9B169164B55B697CC9163 /* LifeScriptApp.swift */,
+				6F42AC8144A401510988935F /* Models */,
+				2D2585D71D8F79DB04BA48F2 /* Services */,
+				2B7259603A75CC59E868F0CD /* Utilities */,
+				1BBD60137AF6A8A1929BB06F /* Views */,
+			);
+			path = LifeScript;
+			sourceTree = "<group>";
+		};
+		6F42AC8144A401510988935F /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B2D32B7B1316A62911512967 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		7DD5CB2F3C18BEC25FCF6DA2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2928D0FBE473451F745C5288 /* LifeScript.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAA165A7A25200548628929B /* LifeScript */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CC26D491A0F8FF5D5C208246 /* Build configuration list for PBXNativeTarget "LifeScript" */;
+			buildPhases = (
+				7FDB8C8BF3D1783422E93C58 /* Sources */,
+				8C4104D72C804FBF5C416284 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LifeScript;
+			packageProductDependencies = (
+				A871040D788F1C3A54896FD7 /* Supabase */,
+			);
+			productName = LifeScript;
+			productReference = 2928D0FBE473451F745C5288 /* LifeScript.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		45D8E6403DDEF6D67642332E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					AAA165A7A25200548628929B = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 52BE9A216C81DFF64CB9E8F8 /* Build configuration list for PBXProject "LifeScript" */;
+			developmentRegion = ja;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				ja,
+			);
+			mainGroup = 177869BBC61A74FCD0A537E1;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6267EBA4FB18E9B1595E2113 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7DD5CB2F3C18BEC25FCF6DA2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAA165A7A25200548628929B /* LifeScript */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7FDB8C8BF3D1783422E93C58 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADC0FC25B78F28957891BA5E /* AuthManager.swift in Sources */,
+				BCE0004961EB62225988EA1C /* Color+Hex.swift in Sources */,
+				F9F67CCA49739D75D2D38AC2 /* DataService.swift in Sources */,
+				32FA8EB344B3EF4AB4D8EBFA /* EventFormSheet.swift in Sources */,
+				D95A36181BF4C2D4B5C050A0 /* HomeTab.swift in Sources */,
+				E5E0FB49DA885EDBDBAFD3B1 /* LifeScriptApp.swift in Sources */,
+				E174278119692BC64C09F441 /* LoginView.swift in Sources */,
+				324D596521949EEE91C83B27 /* MainTabView.swift in Sources */,
+				299383E4AB6588FFCA545767 /* MemoryTab.swift in Sources */,
+				C3A7F300B7C56B5DCE43036A /* Models.swift in Sources */,
+				98635C5C51D0104B898D1E83 /* NotificationsTab.swift in Sources */,
+				FB6EF3FC65D1C8F710F25337 /* SettingsTab.swift in Sources */,
+				F5D72020D5419E3E33320932 /* SupabaseClient.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2E5DFBF4A106D3D6E9E46BE2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = LifeScript;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lifescript.LifeScript;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		66E7E076E65DD66791761724 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		83BC351A8486C5CB987239AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8DE4FB9A6B130F2A5A278F9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = LifeScript;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lifescript.LifeScript;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		52BE9A216C81DFF64CB9E8F8 /* Build configuration list for PBXProject "LifeScript" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				83BC351A8486C5CB987239AF /* Debug */,
+				66E7E076E65DD66791761724 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CC26D491A0F8FF5D5C208246 /* Build configuration list for PBXNativeTarget "LifeScript" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8DE4FB9A6B130F2A5A278F9D /* Debug */,
+				2E5DFBF4A106D3D6E9E46BE2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6267EBA4FB18E9B1595E2113 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A871040D788F1C3A54896FD7 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6267EBA4FB18E9B1595E2113 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 45D8E6403DDEF6D67642332E /* Project object */;
+}

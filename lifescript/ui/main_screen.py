@@ -794,7 +794,7 @@ class EditorView:
     def _script_tile(self, script: dict) -> ft.Container:
         name = script.get("name", "") or ""
         dsl_preview = (script.get("dsl_text", "") or "")[:30].replace("\n", " ")
-        display = name if name else f"#{script['id']} {dsl_preview}"
+        display = name if name else dsl_preview or f"スクリプト #{script['id']}"
         return ft.Container(
             content=ft.Row([
                 ft.Container(width=8, height=8, border_radius=4, bgcolor=COLORS["green"]),
@@ -905,6 +905,10 @@ class EditorView:
         tab = self._active_tab
         try:
             trigger_dict = result.get("trigger", {"type": "interval", "seconds": 3600})
+            # コンパイル結果のtitleをスクリプト名として使用
+            compiled_title = result.get("title", "")
+            if compiled_title and (tab.name.startswith("untitled_") or tab.name.startswith("script_")):
+                tab.name = compiled_title
             script = db_client.save_script(
                 dsl_text=code,
                 compiled_python=result["code"],
@@ -912,7 +916,7 @@ class EditorView:
             )
             tab.script_id = str(script["id"])
             self._scheduler.add_script(script, trigger=trigger_dict)
-            self._log(f'保存・登録完了: {tab.name} (#{script["id"]})', COLORS["green"])
+            self._log(f'保存・登録完了: {tab.name}', COLORS["green"])
             tab.compiled = None
             self._load_scripts_list()
         except Exception as e:
@@ -934,7 +938,7 @@ class EditorView:
                 return
 
         # 新しいタブで開く
-        name = script.get("name", "") or f"script_{script['id']}.ls"
+        name = script.get("name", "") or (script.get("dsl_text", "") or "")[:20].replace("\n", " ") or f"スクリプト #{script['id']}"
         tab = _Tab(
             name=name,
             dsl_text=script.get("dsl_text", ""),
@@ -953,6 +957,7 @@ class EditorView:
             self._scheduler.remove_script(str(script["id"]))
             db_client.delete_script(script["id"])
             self._load_scripts_list()
-            self._log(f"Script#{script['id']} を削除しました", COLORS["yellow"])
+            del_name = script.get("name", "") or f"#{script['id']}"
+            self._log(f"「{del_name}」を削除しました", COLORS["yellow"])
         except Exception as e:
             self._log(f"削除エラー: {e}", COLORS["coral"])

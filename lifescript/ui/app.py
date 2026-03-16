@@ -91,6 +91,37 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
         def _on_login_success(user: dict) -> None:
             _user_info[0] = user
+            # DB接続（オンボーディング判定に必要）
+            if not db_client.is_connected:
+                db_client.connect()
+            # メモリが空なら初回 → オンボーディング
+            if _needs_onboarding():
+                page.controls.clear()
+                _show_onboarding()
+                page.update()
+            else:
+                page.controls.clear()
+                _show_main_app()
+                page.update()
+
+        def _needs_onboarding() -> bool:
+            try:
+                logs = db_client.get_machine_logs(limit=100)
+                return not any(l.get("action_type") == "memory" for l in logs)
+            except Exception:
+                return True
+
+        # ==============================================================
+        # Phase 2.5: オンボーディング（初回のみ）
+        # ==============================================================
+        def _show_onboarding() -> None:
+            from .onboarding_screen import build_onboarding
+            onboarding = build_onboarding(page, on_complete=_on_onboarding_complete)
+            page.controls.clear()
+            page.add(onboarding)
+            page.update()
+
+        def _on_onboarding_complete() -> None:
             page.controls.clear()
             _show_main_app()
             page.update()

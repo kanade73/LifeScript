@@ -221,14 +221,21 @@ def _gather_recent_logs() -> str:
 def _gather_memory() -> str:
     try:
         logs = db_client.get_machine_logs(limit=100)
-        memories = [l for l in logs if l.get("action_type") == "memory"]
-        if not memories:
-            return "（なし）"
+        manual = [l for l in logs if l.get("action_type") == "memory"]
+        auto = [l for l in logs if l.get("action_type") == "memory_auto"]
         lines = []
-        for m in memories:
-            content = m.get("content", "").strip()
-            if content:
-                lines.append(f"- {content}")
+        if manual:
+            lines.append("### ユーザーが記録")
+            for m in manual:
+                c = m.get("content", "").strip()
+                if c:
+                    lines.append(f"- {c}")
+        if auto:
+            lines.append("### マシンの観察")
+            for m in auto:
+                c = m.get("content", "").strip()
+                if c:
+                    lines.append(f"- {c}")
         return "\n".join(lines) if lines else "（なし）"
     except Exception:
         return "（取得エラー）"

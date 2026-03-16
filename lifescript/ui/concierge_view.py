@@ -193,13 +193,31 @@ class ConciergeView:
                     text=trait, source="trait", log_id=None,
                 ))
 
-        # 2. ユーザーが手動で追加したメモリ
+        # 2. マシンの観察（自動メモリ）
         try:
             logs = db_client.get_machine_logs(limit=100)
             memories = [l for l in logs if l.get("action_type") == "memory"]
+            auto_memories = [l for l in logs if l.get("action_type") == "memory_auto"]
         except Exception:
             memories = []
+            auto_memories = []
 
+        if auto_memories:
+            self._memory_list.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=14, color=ORANGE),
+                    ft.Text("マシンの観察", size=11, weight=ft.FontWeight.W_600, color=ORANGE),
+                ], spacing=4),
+                padding=ft.padding.only(left=4, top=12, bottom=4),
+            ))
+            for mem in auto_memories:
+                self._memory_list.controls.append(self._memory_card(
+                    text=mem.get("content", ""),
+                    source="auto",
+                    log_id=mem.get("id"),
+                ))
+
+        # 3. ユーザーが手動で追加したメモリ
         if memories:
             self._memory_list.controls.append(ft.Container(
                 content=ft.Row([
@@ -215,7 +233,7 @@ class ConciergeView:
                     log_id=mem.get("id"),
                 ))
 
-        if not traits and not memories:
+        if not traits and not memories and not auto_memories:
             self._memory_list.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.LIGHTBULB_OUTLINE_ROUNDED, size=32, color=LIGHT_TEXT),
@@ -228,15 +246,16 @@ class ConciergeView:
             ))
 
     def _memory_card(self, text: str, source: str, log_id: int | None) -> ft.Container:
-        is_manual = source == "manual"
+        is_editable = source in ("manual", "auto")
         actions: list[ft.Control] = []
-        if is_manual and log_id is not None:
-            actions.append(ft.IconButton(
-                ft.Icons.EDIT_ROUNDED, icon_size=14, icon_color=MID_TEXT,
-                tooltip="編集",
-                style=ft.ButtonStyle(padding=4),
-                on_click=lambda e, lid=log_id, t=text: self._on_edit_memory(lid, t),
-            ))
+        if is_editable and log_id is not None:
+            if source == "manual":
+                actions.append(ft.IconButton(
+                    ft.Icons.EDIT_ROUNDED, icon_size=14, icon_color=MID_TEXT,
+                    tooltip="編集",
+                    style=ft.ButtonStyle(padding=4),
+                    on_click=lambda e, lid=log_id, t=text: self._on_edit_memory(lid, t),
+                ))
             actions.append(ft.IconButton(
                 ft.Icons.DELETE_OUTLINE_ROUNDED, icon_size=14, icon_color=CORAL,
                 tooltip="削除",
@@ -244,8 +263,12 @@ class ConciergeView:
                 on_click=lambda e, lid=log_id: self._on_delete_memory(lid),
             ))
 
-        icon = ft.Icons.AUTO_AWESOME_ROUNDED if source == "trait" else ft.Icons.PERSON_ROUNDED
-        icon_color = PURPLE if source == "trait" else BLUE
+        icon_map = {
+            "trait": (ft.Icons.AUTO_AWESOME_ROUNDED, PURPLE),
+            "auto": (ft.Icons.VISIBILITY_ROUNDED, ORANGE),
+            "manual": (ft.Icons.PERSON_ROUNDED, BLUE),
+        }
+        icon, icon_color = icon_map.get(source, (ft.Icons.PERSON_ROUNDED, BLUE))
 
         return ft.Container(
             content=ft.Row([

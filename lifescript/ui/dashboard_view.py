@@ -169,6 +169,7 @@ class DashboardView:
                     is_paused = self._scheduler.is_paused(sid)
                     trigger = self._scheduler.get_trigger_info(sid)
                     trigger_desc = self._scheduler.describe_trigger(trigger)
+                    script_name = script.get("name", "") or ""
                     dsl_preview = (script.get("dsl_text", "") or "")[:60].replace("\n", " ")
 
                     # Status indicator
@@ -219,7 +220,7 @@ class DashboardView:
                             ft.Container(width=8, height=8, border_radius=4, bgcolor=status_color),
                             ft.Column([
                                 ft.Text(
-                                    f"#{script['id']}  {dsl_preview}",
+                                    script_name if script_name else dsl_preview or f"スクリプト #{script['id']}",
                                     size=12, weight=ft.FontWeight.W_600, color=COLORS["dark_text"],
                                     max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                                 ),

@@ -168,12 +168,41 @@ class HomeView:
                         border=ft.border.all(1, _BORDER),
                     ))
 
-            # 手動メモリ
+            # マシンの観察 + 手動メモリ
             try:
                 logs = db_client.get_machine_logs(limit=100)
                 memories = [l for l in logs if l.get("action_type") == "memory"]
+                auto_memories = [l for l in logs if l.get("action_type") == "memory_auto"]
             except Exception:
                 memories = []
+                auto_memories = []
+
+            if auto_memories:
+                memory_list.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=14, color=ORANGE),
+                        ft.Text("マシンの観察", size=11,
+                                weight=ft.FontWeight.W_600, color=ORANGE),
+                    ], spacing=4),
+                    padding=ft.padding.only(left=4, top=12, bottom=4),
+                ))
+                for mem in auto_memories:
+                    content = mem.get("content", "")
+                    log_id = mem.get("id")
+                    memory_list.controls.append(ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=14, color=ORANGE),
+                            ft.Text(content, size=13, color=DARK_TEXT, expand=True),
+                            ft.IconButton(
+                                ft.Icons.DELETE_OUTLINE_ROUNDED, icon_size=14, icon_color=CORAL,
+                                tooltip="削除", style=ft.ButtonStyle(padding=4),
+                                on_click=lambda e, lid=log_id: _delete(lid),
+                            ),
+                        ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
+                        bgcolor=CARD_BG, border_radius=10,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border=ft.border.all(1, _BORDER),
+                    ))
 
             if memories:
                 memory_list.controls.append(ft.Container(
@@ -207,7 +236,7 @@ class HomeView:
                         border=ft.border.all(1, _BORDER),
                     ))
 
-            if not traits and not memories:
+            if not traits and not memories and not auto_memories:
                 memory_list.controls.append(ft.Container(
                     content=ft.Column([
                         ft.Icon(ft.Icons.LIGHTBULB_OUTLINE_ROUNDED, size=32, color=LIGHT_TEXT),
