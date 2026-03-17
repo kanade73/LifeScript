@@ -2,6 +2,13 @@
 
 **「暮らしをHackせよ！」**
 
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
+![Flet](https://img.shields.io/badge/Flet-0.82-02569B?style=flat&logo=flutter&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-iOS-FA7343?style=flat&logo=swift&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-8E75B2?style=flat&logo=googlegemini&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=flat&logo=supabase&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-yellow?style=flat)
+
 <img width="1624" height="982" alt="スクリーンショット 2026-03-17 20 48 15" src="https://github.com/user-attachments/assets/70c68c20-c9bb-4c1b-99a4-d23fecd54e67" />
 
 LifeScript は、あなたの生活文脈を理解して能動的に動く"相棒"—— **ダリー** を育てるためのDSL（ドメイン固有言語）です。
