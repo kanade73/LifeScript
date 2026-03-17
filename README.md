@@ -1,6 +1,6 @@
 <h1><img src="pictures/darii.png" width="40" align="absmiddle" /> LifeScript</h1>
 
-**「暮らしをHackせよ！」**
+<h2>暮らしをHackするアプリケーション</h2>
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
 ![Flet](https://img.shields.io/badge/Flet-0.82-02569B?style=flat&logo=flutter&logoColor=white)
