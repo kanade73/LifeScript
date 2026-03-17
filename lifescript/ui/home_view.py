@@ -31,6 +31,12 @@ _WIDGET_MAX_HEIGHT = int(_WIDGET_ITEM_HEIGHT * 2.5)  # 2件+半分見えて「�
 
 
 class HomeView:
+    # ページ定義: (ページ名, アイコン)
+    _PAGES = [
+        ("メイン", ft.Icons.HOME_ROUNDED),
+        ("ウィジェット", ft.Icons.WIDGETS_ROUNDED),
+    ]
+
     def __init__(self, page: ft.Page, scheduler: LifeScriptScheduler,
                  on_navigate: callable | None = None) -> None:
         self._page = page
@@ -42,6 +48,7 @@ class HomeView:
         self._content_container: ft.Container | None = None
         self._refresh_timer: threading.Timer | None = None
         self._is_active = False
+        self._current_page = 0
 
     def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
         self._logs = (entries + self._logs)[:50]
@@ -148,42 +155,92 @@ class HomeView:
             padding=ft.padding.only(bottom=14, top=4),
         )
 
+        # ── ページタブ ──────────────────────────────────────────
+        def _switch_page(idx: int) -> None:
+            self._current_page = idx
+            self._refresh_content()
+
+        page_tabs = ft.Row(
+            [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(icon, size=16,
+                                color=DARK_TEXT if i == self._current_page else LIGHT_TEXT),
+                        ft.Text(name, size=13,
+                                weight=ft.FontWeight.W_600 if i == self._current_page else ft.FontWeight.W_400,
+                                color=DARK_TEXT if i == self._current_page else LIGHT_TEXT),
+                    ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor=YELLOW if i == self._current_page else ft.Colors.TRANSPARENT,
+                    border_radius=10,
+                    padding=ft.padding.symmetric(horizontal=14, vertical=6),
+                    on_click=lambda e, idx=i: _switch_page(idx),
+                    ink=True,
+                )
+                for i, (name, icon) in enumerate(self._PAGES)
+            ],
+            spacing=4,
+        )
+
         # ── ウィジェット群 ────────────────────────────────────
-        clock_widget = self._widget_clock()
-        calendar_widget = self._widget_calendar()
-        notification_widget = self._widget_notifications()
-        schedule_widget = self._widget_schedule()
-        machine_widget = self._widget_machine()
-        gmail_widget = self._widget_gmail()
-        dynamic_widgets = self._build_dynamic_widgets()
+        if self._current_page == 0:
+            # メインページ: 時計 + カレンダー | ダリー + スケジュール
+            clock_widget = self._widget_clock()
+            calendar_widget = self._widget_calendar()
+            schedule_widget = self._widget_schedule()
+            machine_widget = self._widget_machine()
 
-        # ── ウィジェットグリッド配置 ──────────────────────────
-        #  左列: 時計 + カレンダー + 動的ウィジェット群
-        #  右列: Machine + 通知 + スケジュール
-        left_items: list[ft.Control] = [
-            clock_widget,
-            ft.Container(height=10),
-            calendar_widget,
-        ]
-        if gmail_widget:
-            left_items.append(ft.Container(height=10))
-            left_items.append(gmail_widget)
-        for dw in dynamic_widgets:
-            left_items.append(ft.Container(height=10))
-            left_items.append(dw)
-
-        return ft.Column([
-            header,
-            ft.Row([
-                ft.Column(left_items, expand=6, spacing=0, scroll=ft.ScrollMode.AUTO),
+            page_content = ft.Row([
+                ft.Column([
+                    clock_widget,
+                    ft.Container(height=10),
+                    calendar_widget,
+                ], expand=6, spacing=0, scroll=ft.ScrollMode.AUTO),
                 ft.Column([
                     machine_widget,
                     ft.Container(height=10),
-                    notification_widget,
-                    ft.Container(height=10),
                     schedule_widget,
                 ], expand=7, spacing=0, scroll=ft.ScrollMode.AUTO),
-            ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+            ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        else:
+            # ウィジェットページ: 通知 + Gmail + 動的ウィジェット群
+            notification_widget = self._widget_notifications()
+            gmail_widget = self._widget_gmail()
+            dynamic_widgets = self._build_dynamic_widgets()
+
+            left_items: list[ft.Control] = []
+            if gmail_widget:
+                left_items.append(gmail_widget)
+            for dw in dynamic_widgets:
+                if left_items:
+                    left_items.append(ft.Container(height=10))
+                left_items.append(dw)
+            if not left_items:
+                left_items.append(ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.WIDGETS_ROUNDED, size=36, color=LIGHT_TEXT),
+                        ft.Text("ウィジェットはまだありません", size=14, color=MID_TEXT,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(
+                            "IDEで web.fetch() や widget.show() を実行すると\nここにウィジェットが追加されます",
+                            size=12, color=LIGHT_TEXT, text_align=ft.TextAlign.CENTER,
+                        ),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                    padding=40, alignment=ft.Alignment(0, 0),
+                    bgcolor=CARD_BG, border_radius=16, border=ft.border.all(1, _BORDER),
+                ))
+
+            right_items: list[ft.Control] = [notification_widget]
+
+            page_content = ft.Row([
+                ft.Column(left_items, expand=6, spacing=0, scroll=ft.ScrollMode.AUTO),
+                ft.Column(right_items, expand=7, spacing=0, scroll=ft.ScrollMode.AUTO),
+            ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+
+        return ft.Column([
+            header,
+            page_tabs,
+            ft.Container(height=6),
+            page_content,
         ], expand=True, spacing=0)
 
     # ==================================================================
@@ -785,7 +842,18 @@ class HomeView:
             log_id = entry.get("id")
             card = ft.Container(
                 content=ft.Row([
-                    ft.Text(display, size=14, color=DARK_TEXT, expand=True),
+                    ft.Container(
+                        content=ft.Markdown(
+                            display, selectable=True,
+                            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                            md_style_sheet=ft.MarkdownStyleSheet(
+                                p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                                strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                                list_bullet_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                            ),
+                        ),
+                        expand=True,
+                    ),
                     ft.IconButton(
                         ft.Icons.CHECK_ROUNDED, icon_size=18, icon_color=GREEN,
                         tooltip="承認", style=ft.ButtonStyle(padding=2),
@@ -1072,7 +1140,19 @@ class HomeView:
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Divider(height=1, color=_BORDER),
                     ft.Container(
-                        content=ft.Text(content, size=13, color=DARK_TEXT, selectable=True),
+                        content=ft.Markdown(
+                            content, selectable=True,
+                            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                            code_theme=ft.MarkdownCodeTheme.MONOKAI,
+                            md_style_sheet=ft.MarkdownStyleSheet(
+                                p_text_style=ft.TextStyle(size=13, color=DARK_TEXT),
+                                h1_text_style=ft.TextStyle(size=18, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                                h2_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                                h3_text_style=ft.TextStyle(size=14, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                                strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                                list_bullet_text_style=ft.TextStyle(size=13, color=DARK_TEXT),
+                            ),
+                        ),
                         padding=ft.padding.only(top=4),
                     ),
                 ], spacing=4),
@@ -1103,7 +1183,16 @@ class HomeView:
             content_items.append(ft.Container(
                 content=ft.Column([
                     ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=MID_TEXT),
-                    ft.Text(value or "—", size=14, color=DARK_TEXT, selectable=True),
+                    ft.Markdown(
+                        value or "—", selectable=True,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                        code_theme=ft.MarkdownCodeTheme.MONOKAI,
+                        md_style_sheet=ft.MarkdownStyleSheet(
+                            p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                            strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                            list_bullet_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                        ),
+                    ),
                 ], spacing=2),
                 padding=ft.padding.only(bottom=10),
             ))

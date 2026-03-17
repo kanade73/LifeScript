@@ -444,51 +444,69 @@ class ConciergeView:
         # actionブロック除去
         display = re.sub(r"```action\s*\n?.*?```", "", text, flags=re.DOTALL).strip()
 
-        # lifescriptブロックをコピペ用コードとして表示
-        parts = re.split(r"```(?:lifescript|ls|yaml)?\s*\n?(.*?)```", display, flags=re.DOTALL)
+        # lifescriptコードブロックを抽出してコピーボタン付きで表示
+        ls_pattern = r"```(?:lifescript|ls)\s*\n?(.*?)```"
+        ls_blocks = re.findall(ls_pattern, display, flags=re.DOTALL)
+        # lifescriptブロックを除去した残りのMarkdown
+        md_text = re.sub(ls_pattern, "", display, flags=re.DOTALL).strip()
+
         controls: list[ft.Control] = []
 
-        for i, part in enumerate(parts):
-            part = part.strip()
-            if not part:
-                continue
-            if i % 2 == 0:
-                controls.append(ft.Text(part, size=14, color=DARK_TEXT))
-            else:
-                code = part.strip()
-                controls.append(ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Container(
-                                content=ft.Text("LifeScript", size=10, color=LIGHT_TEXT,
-                                                weight=ft.FontWeight.W_600),
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
-                            ft.Container(expand=True),
-                            ft.TextButton(
-                                "コピー",
-                                icon=ft.Icons.COPY_ROUNDED,
-                                style=ft.ButtonStyle(
-                                    color=BLUE, padding=ft.padding.symmetric(horizontal=8),
-                                    text_style=ft.TextStyle(size=11),
-                                ),
-                                on_click=lambda e, c=code: self._copy_to_clipboard(c),
-                            ),
-                        ], spacing=0),
+        if md_text:
+            controls.append(ft.Markdown(
+                md_text,
+                selectable=True,
+                extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                code_theme=ft.MarkdownCodeTheme.MONOKAI,
+                md_style_sheet=ft.MarkdownStyleSheet(
+                    p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                    h1_text_style=ft.TextStyle(size=20, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    h2_text_style=ft.TextStyle(size=18, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                    strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    list_bullet_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                    code_text_style=ft.TextStyle(
+                        size=12, color="#E8E4DC",
+                        font_family="Courier New, monospace",
+                    ),
+                ),
+            ))
+
+        for code in ls_blocks:
+            code = code.strip()
+            controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
                         ft.Container(
-                            content=ft.Text(
-                                code, size=12, color="#E8E4DC",
-                                font_family="Courier New, monospace",
-                                selectable=True,
-                            ),
-                            bgcolor="#2D2B27",
-                            border_radius=8,
-                            padding=12,
+                            content=ft.Text("LifeScript", size=10, color=LIGHT_TEXT,
+                                            weight=ft.FontWeight.W_600),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
                         ),
-                    ], spacing=2),
-                    border=ft.border.all(1, _BORDER),
-                    border_radius=10,
-                ))
+                        ft.Container(expand=True),
+                        ft.TextButton(
+                            "コピー",
+                            icon=ft.Icons.COPY_ROUNDED,
+                            style=ft.ButtonStyle(
+                                color=BLUE, padding=ft.padding.symmetric(horizontal=8),
+                                text_style=ft.TextStyle(size=11),
+                            ),
+                            on_click=lambda e, c=code: self._copy_to_clipboard(c),
+                        ),
+                    ], spacing=0),
+                    ft.Container(
+                        content=ft.Text(
+                            code, size=12, color="#E8E4DC",
+                            font_family="Courier New, monospace",
+                            selectable=True,
+                        ),
+                        bgcolor="#2D2B27",
+                        border_radius=8,
+                        padding=12,
+                    ),
+                ], spacing=2),
+                border=ft.border.all(1, _BORDER),
+                border_radius=10,
+            ))
 
         if not controls:
             controls.append(ft.Text(display or "…", size=14, color=DARK_TEXT))
