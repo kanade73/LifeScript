@@ -75,6 +75,23 @@ class _SupabaseBackend:
 
         self._client = create_client(url, key)
 
+    @staticmethod
+    def _is_real_uid(user_id: str) -> bool:
+        """user_idがSupabase Auth由来の本物のUUIDかどうか判定。"""
+        return bool(user_id) and user_id != "local"
+
+    def _filter_uid(self, query: Any, user_id: str) -> Any:
+        """user_idでフィルタ。localならNULL、それ以外はeq。"""
+        if self._is_real_uid(user_id):
+            return query.eq("user_id", user_id)
+        return query.is_("user_id", "null")
+
+    def _insert_uid(self, data: dict, user_id: str) -> dict:
+        """INSERT用dictにuser_idを追加。localならキーを含めない(NULL)。"""
+        if self._is_real_uid(user_id):
+            data["user_id"] = user_id
+        return data
+
     # -- Scripts --------------------------------------------------------
     def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
         data: dict[str, Any] = {
@@ -82,6 +99,7 @@ class _SupabaseBackend:
             "compiled_python": compiled_python,
             "active": True,
         }
+        self._insert_uid(data, user_id)
         if name:
             data["name"] = name
         try:
@@ -94,14 +112,9 @@ class _SupabaseBackend:
             return resp.data[0]
 
     def get_scripts(self, user_id: str = "local") -> list[dict]:
-        resp = (
-            self._client.table("scripts")
-            .select("*")
-            .eq("active", True)
-            .is_("user_id", "null")
-            .order("id")
-            .execute()
-        )
+        q = self._client.table("scripts").select("*").eq("active", True)
+        q = self._filter_uid(q, user_id)
+        resp = q.order("id").execute()
         return resp.data
 
     def get_script_by_id(self, script_id: int) -> dict:
@@ -139,6 +152,7 @@ class _SupabaseBackend:
             "note": note,
             "source": source,
         }
+        self._insert_uid(data, user_id)
         resp = self._client.table("calendar_events").insert(data).execute()
         return resp.data[0]
 
@@ -149,7 +163,8 @@ class _SupabaseBackend:
         start_from: str | None = None,
         start_to: str | None = None,
     ) -> list[dict]:
-        q = self._client.table("calendar_events").select("*").is_("user_id", "null")
+        q = self._client.table("calendar_events").select("*")
+        q = self._filter_uid(q, user_id)
         if keyword:
             q = q.ilike("title", f"%{keyword}%")
         if start_from:
@@ -176,18 +191,14 @@ class _SupabaseBackend:
             "action_type": action_type,
             "content": content,
         }
+        self._insert_uid(data, user_id)
         resp = self._client.table("machine_logs").insert(data).execute()
         return resp.data[0]
 
     def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
-        resp = (
-            self._client.table("machine_logs")
-            .select("*")
-            .is_("user_id", "null")
-            .order("id", desc=True)
-            .limit(limit)
-            .execute()
-        )
+        q = self._client.table("machine_logs").select("*")
+        q = self._filter_uid(q, user_id)
+        resp = q.order("id", desc=True).limit(limit).execute()
         return resp.data
 
     def delete_machine_log(self, log_id: int) -> None:
@@ -195,35 +206,29 @@ class _SupabaseBackend:
 
     # -- Streaks --------------------------------------------------------
     def get_streak(self, habit_name: str, user_id: str = "local") -> int:
-        resp = (
-            self._client.table("streaks")
-            .select("count")
-            .is_("user_id", "null")
-            .eq("habit_name", habit_name)
-            .execute()
-        )
+        q = self._client.table("streaks").select("count")
+        q = self._filter_uid(q, user_id)
+        resp = q.eq("habit_name", habit_name).execute()
         if resp.data:
             return resp.data[0]["count"]
         return 0
 
     def update_streak(self, habit_name: str, count: int, user_id: str = "local") -> None:
-        resp = (
-            self._client.table("streaks")
-            .select("id")
-            .is_("user_id", "null")
-            .eq("habit_name", habit_name)
-            .execute()
-        )
+        q = self._client.table("streaks").select("id")
+        q = self._filter_uid(q, user_id)
+        resp = q.eq("habit_name", habit_name).execute()
         if resp.data:
             self._client.table("streaks").update(
                 {"count": count, "last_date": _today()}
             ).eq("id", resp.data[0]["id"]).execute()
         else:
-            self._client.table("streaks").insert({
+            data = {
                 "habit_name": habit_name,
                 "count": count,
                 "last_date": _today(),
-            }).execute()
+            }
+            self._insert_uid(data, user_id)
+            self._client.table("streaks").insert(data).execute()
 
 
 # ======================================================================
@@ -394,11 +399,23 @@ class _SQLiteBackend:
 # Unified DatabaseClient facade
 # ======================================================================
 class DatabaseClient:
-    """統一 DB インターフェース。Supabase を試行し、失敗時は SQLite にフォールバック。"""
+    """統一 DB インターフェース。Supabase を試行し、失敗時は SQLite にフォールバック。
+
+    ログイン後に set_user_id() を呼ぶと、以降の全クエリがそのユーザーに紐づく。
+    """
 
     def __init__(self) -> None:
         self._backend: _SupabaseBackend | _SQLiteBackend | None = None
         self._is_supabase = False
+        self._user_id: str = "local"
+
+    def set_user_id(self, user_id: str) -> None:
+        """ログインユーザーのIDをセットする。以降の全操作がこのIDで行われる。"""
+        self._user_id = user_id or "local"
+
+    @property
+    def user_id(self) -> str:
+        return self._user_id
 
     def connect(self) -> None:
         url = os.getenv("SUPABASE_URL", "")
@@ -427,12 +444,15 @@ class DatabaseClient:
         assert self._backend is not None, "DB未接続です。connect()を先に呼んでください。"
         return self._backend
 
-    # Scripts
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
-        return self._b().save_script(dsl_text, compiled_python, user_id, name)
+    def _uid(self) -> str:
+        return self._user_id
 
-    def get_scripts(self, user_id: str = "local") -> list[dict]:
-        return self._b().get_scripts(user_id)
+    # Scripts
+    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "", name: str = "") -> dict:
+        return self._b().save_script(dsl_text, compiled_python, user_id or self._uid(), name)
+
+    def get_scripts(self, user_id: str = "") -> list[dict]:
+        return self._b().get_scripts(user_id or self._uid())
 
     def get_script_by_id(self, script_id: int) -> dict:
         return self._b().get_script_by_id(script_id)
@@ -445,9 +465,13 @@ class DatabaseClient:
 
     # Calendar Events
     def add_event(self, **kwargs: Any) -> dict:
+        if "user_id" not in kwargs or not kwargs["user_id"]:
+            kwargs["user_id"] = self._uid()
         return self._b().add_event(**kwargs)
 
     def get_events(self, **kwargs: Any) -> list[dict]:
+        if "user_id" not in kwargs or not kwargs["user_id"]:
+            kwargs["user_id"] = self._uid()
         return self._b().get_events(**kwargs)
 
     def delete_event(self, event_id: int) -> None:
@@ -457,21 +481,21 @@ class DatabaseClient:
         self._b().update_event(event_id, **kwargs)
 
     # Machine Logs
-    def add_machine_log(self, action_type: str, content: str, user_id: str = "local") -> dict:
-        return self._b().add_machine_log(action_type, content, user_id)
+    def add_machine_log(self, action_type: str, content: str, user_id: str = "") -> dict:
+        return self._b().add_machine_log(action_type, content, user_id or self._uid())
 
-    def get_machine_logs(self, user_id: str = "local", limit: int = 50) -> list[dict]:
-        return self._b().get_machine_logs(user_id, limit)
+    def get_machine_logs(self, user_id: str = "", limit: int = 50) -> list[dict]:
+        return self._b().get_machine_logs(user_id or self._uid(), limit)
 
     def delete_machine_log(self, log_id: int) -> None:
         self._b().delete_machine_log(log_id)
 
     # Streaks
-    def get_streak(self, habit_name: str, user_id: str = "local") -> int:
-        return self._b().get_streak(habit_name, user_id)
+    def get_streak(self, habit_name: str, user_id: str = "") -> int:
+        return self._b().get_streak(habit_name, user_id or self._uid())
 
-    def update_streak(self, habit_name: str, count: int, user_id: str = "local") -> None:
-        self._b().update_streak(habit_name, count, user_id)
+    def update_streak(self, habit_name: str, count: int, user_id: str = "") -> None:
+        self._b().update_streak(habit_name, count, user_id or self._uid())
 
 
 # Application-wide singleton

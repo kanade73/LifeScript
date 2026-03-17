@@ -42,6 +42,24 @@ COLORS = {
 }
 
 
+def _resolve_asset(name: str) -> str:
+    """アセット画像のパスを解決する。パッケージ/開発両対応。"""
+    import sys, os
+    if getattr(sys, "frozen", False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base, "pictures", name)
+
+
+DARII_IMG = _resolve_asset("darii.png")
+
+
+def darii_image(size: int) -> ft.Image:
+    """ダリーの画像コントロールを返す。"""
+    return ft.Image(src=DARII_IMG, width=size, height=size, fit="contain")
+
+
 def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
     """コンパイラとスケジューラを束縛した Flet メイン関数を返す。"""
 
@@ -73,8 +91,15 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
         def _after_splash() -> None:
             time.sleep(1.5)
             page.controls.clear()
-            _show_login()
-            page.update()
+
+            # セッション復元を試みる
+            from ..auth import try_restore_session
+            restored = try_restore_session()
+            if restored and restored.get("email"):
+                _on_login_success(restored)
+            else:
+                _show_login()
+                page.update()
 
         threading.Thread(target=_after_splash, daemon=True).start()
 
@@ -94,6 +119,8 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             # DB接続（オンボーディング判定に必要）
             if not db_client.is_connected:
                 db_client.connect()
+            # ログインユーザーのIDをDBクライアントにセット
+            db_client.set_user_id(user.get("id", "local"))
             # メモリが空なら初回 → オンボーディング
             if _needs_onboarding():
                 page.controls.clear()
@@ -137,6 +164,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             from .dashboard_view import DashboardView
             from .reference_view import ReferenceView
             from .concierge_view import ConciergeView
+            from .settings_view import SettingsView
 
             # ── DB connect ──────────────────────────────────────
             db_client.connect()
@@ -150,8 +178,9 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             dashboard_view = DashboardView(page=page, scheduler=scheduler)
             reference_view = ReferenceView(page=page)
             concierge_view = ConciergeView(page=page, model=compiler.model)
+            settings_view = SettingsView(page=page)
 
-            views = [home_view, editor_view, dashboard_view, reference_view, concierge_view]
+            views = [home_view, editor_view, dashboard_view, reference_view, concierge_view, settings_view]
             active_view: list = [home_view]
 
             # ── Content area ─────────────────────────────────────
@@ -171,7 +200,8 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 (ft.Icons.CODE_ROUNDED, "IDE"),
                 (ft.Icons.DASHBOARD_ROUNDED, "Dashboard"),
                 (ft.Icons.MENU_BOOK_ROUNDED, "Reference"),
-                (ft.Icons.AUTO_AWESOME_ROUNDED, "Machine"),
+                (ft.Icons.AUTO_AWESOME_ROUNDED, "ダリー"),
+                (ft.Icons.SETTINGS_ROUNDED, "設定"),
             ]
 
             def _build_nav_row(index: int) -> ft.Container:
@@ -201,8 +231,8 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                     ft.Container(
                         content=ft.Row([
                             ft.Container(
-                                content=ft.Text("LS", size=16, weight=ft.FontWeight.W_900, color=CARD_BG),
-                                width=36, height=36, bgcolor=BLUE,
+                                content=darii_image(32),
+                                width=36, height=36,
                                 border_radius=10, alignment=ft.Alignment(0, 0),
                             ),
                             ft.Text("LifeScript", size=14, weight=ft.FontWeight.W_800, color=DARK_TEXT),
@@ -235,6 +265,10 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 ]
 
             def _on_nav(index: int) -> None:
+                # 前のビューのタイマーを停止
+                old_view = active_view[0]
+                if hasattr(old_view, '_stop_refresh_timer'):
+                    old_view._stop_refresh_timer()
                 _nav_index[0] = index
                 active_view[0] = views[index]
                 content_area.content = views[index].build()
@@ -242,7 +276,10 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 page.update()
 
             def _on_logout() -> None:
+                from ..auth import clear_session
+                clear_session()
                 _user_info[0] = None
+                db_client.set_user_id("local")
                 scheduler.stop()
                 page.controls.clear()
                 _show_login()

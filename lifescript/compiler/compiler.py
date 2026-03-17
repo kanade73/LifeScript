@@ -12,7 +12,7 @@ import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-import litellm
+from .. import llm as _llm
 
 from ..exceptions import CompileError
 from ..functions import FUNCTION_DESCRIPTIONS
@@ -21,7 +21,7 @@ from .validator import validate_python
 _SYSTEM_PROMPT = """\
 あなたは LifeScript → Python コンパイラです。
 
-LifeScript は「マシン」という相棒に自分の生活文脈を伝えるための DSL です。
+LifeScript は「ダリー」という相棒に自分の生活文脈を伝えるための DSL です。
 ユーザーが書いた LifeScript を、以下の関数ライブラリのみを使った Python コードに変換してください。
 出力は JSON のみ。マークダウンや説明文は不要です。
 
@@ -267,7 +267,7 @@ class Compiler:
         if self.api_base:
             kwargs["api_base"] = self.api_base
         try:
-            response = litellm.completion(**kwargs)
+            response = _llm.completion(**kwargs)
             return response.choices[0].message.content.strip()
         except Exception as e:
             raise CompileError(f"LLM呼び出しに失敗しました: {e}") from e

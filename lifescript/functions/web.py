@@ -10,7 +10,7 @@ import os
 import re
 
 import httpx
-import litellm
+from .. import llm as _llm
 
 from ..database.client import db_client
 from .. import log_queue
@@ -32,7 +32,7 @@ def _summarize(text: str, url: str) -> str:
     """LLMでテキストを要約する。"""
     model = os.getenv("LIFESCRIPT_MODEL", "gemini/gemini-2.5-flash")
     try:
-        response = litellm.completion(
+        response = _llm.completion(
             model=model,
             messages=[
                 {"role": "system", "content": (

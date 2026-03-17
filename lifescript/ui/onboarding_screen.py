@@ -11,7 +11,7 @@ import flet as ft
 from ..database.client import db_client
 from .app import (
     BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE, PURPLE,
-    DARK_TEXT, MID_TEXT, LIGHT_TEXT,
+    DARK_TEXT, MID_TEXT, LIGHT_TEXT, darii_image,
 )
 
 _BORDER = "#E8E4DC"
@@ -41,9 +41,9 @@ _QUESTIONS: list[tuple[str, list[str], str]] = [
         "疲れたときは{answer}ことが多い",
     ),
     (
-        "マシンにどこまで任せたいですか？",
+        "ダリーにどこまで任せたいですか？",
         ["積極的に提案してほしい", "控えめに提案してほしい", "聞いたときだけ答えてほしい"],
-        "マシンには{answer}",
+        "ダリーには{answer}",
     ),
 ]
 
@@ -184,8 +184,8 @@ def build_onboarding(page: ft.Page, on_complete: callable) -> ft.Control:
             # ヘッダー
             ft.Row([
                 ft.Container(
-                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=28, color=CARD_BG),
-                    width=48, height=48, bgcolor=BLUE, border_radius=14,
+                    content=darii_image(44),
+                    width=48, height=48, border_radius=14,
                     alignment=ft.Alignment(0, 0),
                 ),
                 ft.Container(width=12),

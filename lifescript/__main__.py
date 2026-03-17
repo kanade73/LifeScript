@@ -8,7 +8,18 @@ from dotenv import load_dotenv
 
 
 def main() -> None:
-    load_dotenv()
+    # .env をプロジェクトルートまたは ~/.lifescript/.env から読み込む
+    import sys
+    from pathlib import Path
+
+    # 1. PyInstaller バンドル内
+    if getattr(sys, "frozen", False):
+        load_dotenv(Path(sys._MEIPASS) / ".env")
+    # 2. プロジェクトルート
+    project_env = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(project_env)
+    # 3. ~/.lifescript/.env（ユーザー設定）
+    load_dotenv(Path.home() / ".lifescript" / ".env")
 
     from .compiler.compiler import Compiler
     from .scheduler.scheduler import LifeScriptScheduler

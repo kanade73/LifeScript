@@ -10,8 +10,14 @@ else:
     base = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, base)
 
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+
+# .env を複数の場所から探す
+if getattr(sys, "frozen", False):
+    load_dotenv(os.path.join(base, ".env"))
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path.home() / ".lifescript" / ".env")
 
 from lifescript.compiler.compiler import Compiler
 from lifescript.scheduler.scheduler import LifeScriptScheduler

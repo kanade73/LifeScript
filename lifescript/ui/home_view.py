@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import calendar as cal_mod
+import threading
 from datetime import datetime, timedelta, timezone
 
 import flet as ft
@@ -20,7 +21,7 @@ from ..scheduler.scheduler import LifeScriptScheduler
 from ..traits import gather_all_traits
 from .app import (
     CARD_BG, BLUE, GREEN, CORAL, YELLOW, DARK_TEXT, MID_TEXT, LIGHT_TEXT,
-    PURPLE, ORANGE, BG, SIDEBAR_BG, EDITOR_BG, EDITOR_FG,
+    PURPLE, ORANGE, BG, SIDEBAR_BG, EDITOR_BG, EDITOR_FG, darii_image,
 )
 
 _BORDER = "#E8E4DC"
@@ -38,11 +39,56 @@ class HomeView:
         self._logs: list[tuple[str, str, str]] = []
         self._cal_year = datetime.now().year
         self._cal_month = datetime.now().month
+        self._content_container: ft.Container | None = None
+        self._refresh_timer: threading.Timer | None = None
+        self._is_active = False
 
     def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
         self._logs = (entries + self._logs)[:50]
+        self._refresh_content()
+
+    def _refresh_content(self) -> None:
+        """表示中のウィジェットを最新データで再構築する。"""
+        if self._content_container is not None and self._is_active:
+            try:
+                self._content_container.content = self._build_content()
+                self._page.update()
+            except Exception:
+                pass
+
+    def _start_refresh_timer(self) -> None:
+        """定期リフレッシュ（10秒ごと）。"""
+        self._is_active = True
+
+        def _tick() -> None:
+            if not self._is_active:
+                return
+            self._refresh_content()
+            self._refresh_timer = threading.Timer(10.0, _tick)
+            self._refresh_timer.daemon = True
+            self._refresh_timer.start()
+
+        self._refresh_timer = threading.Timer(10.0, _tick)
+        self._refresh_timer.daemon = True
+        self._refresh_timer.start()
+
+    def _stop_refresh_timer(self) -> None:
+        self._is_active = False
+        if self._refresh_timer:
+            self._refresh_timer.cancel()
+            self._refresh_timer = None
 
     def build(self) -> ft.Control:
+        self._stop_refresh_timer()
+        self._start_refresh_timer()
+        self._content_container = ft.Container(
+            content=self._build_content(),
+            expand=True,
+        )
+        return self._content_container
+
+    def _build_content(self) -> ft.Control:
+        """ホーム画面の中身をフルリビルドする。"""
         # ── Header ────────────────────────────────────────────
         now = datetime.now()
         hour = now.hour
@@ -108,6 +154,7 @@ class HomeView:
         notification_widget = self._widget_notifications()
         schedule_widget = self._widget_schedule()
         machine_widget = self._widget_machine()
+        gmail_widget = self._widget_gmail()
         dynamic_widgets = self._build_dynamic_widgets()
 
         # ── ウィジェットグリッド配置 ──────────────────────────
@@ -118,6 +165,9 @@ class HomeView:
             ft.Container(height=10),
             calendar_widget,
         ]
+        if gmail_widget:
+            left_items.append(ft.Container(height=10))
+            left_items.append(gmail_widget)
         for dw in dynamic_widgets:
             left_items.append(ft.Container(height=10))
             left_items.append(dw)
@@ -181,7 +231,7 @@ class HomeView:
                 memory_list.controls.append(ft.Container(
                     content=ft.Row([
                         ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=14, color=ORANGE),
-                        ft.Text("マシンの観察", size=11,
+                        ft.Text("ダリーの観察", size=11,
                                 weight=ft.FontWeight.W_600, color=ORANGE),
                     ], spacing=4),
                     padding=ft.padding.only(left=4, top=12, bottom=4),
@@ -324,7 +374,7 @@ class HomeView:
                 ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, size=20, color=BLUE),
                 ft.Text("メモリ", size=18, weight=ft.FontWeight.W_700, color=DARK_TEXT),
                 ft.Container(width=4),
-                ft.Text("マシンが把握しているあなたの情報", size=11, color=MID_TEXT),
+                ft.Text("ダリーが把握しているあなたの情報", size=11, color=MID_TEXT),
             ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             content=ft.Container(content=memory_list, width=500),
             actions=[
@@ -561,7 +611,7 @@ class HomeView:
                 ev_title = ev.get("title", "")
                 ev_note = ev.get("note", "")
                 ev_id = ev.get("id")
-                source_label = "マシン" if source == "machine" else "手動"
+                source_label = "ダリー" if source == "machine" else "手動"
                 accent = PURPLE if source == "machine" else BLUE
                 items.append(ft.Container(
                     content=ft.Row([
@@ -631,7 +681,7 @@ class HomeView:
             ft.Text("予定", size=10, color=MID_TEXT),
             ft.Container(width=4),
             ft.Container(width=8, height=8, bgcolor=PURPLE, border_radius=2),
-            ft.Text("マシン", size=10, color=MID_TEXT),
+            ft.Text("ダリー", size=10, color=MID_TEXT),
             ft.Container(width=4),
             ft.Icon(ft.Icons.PUSH_PIN_ROUNDED, size=12, color=PURPLE),
             ft.Text("リマインダー", size=10, color=MID_TEXT),
@@ -691,8 +741,8 @@ class HomeView:
         # 「Machineに聞く」ボタン（初期非表示）
         ask_button = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=14, color=CARD_BG),
-                ft.Text("この提案についてMachineに聞く", size=12, color=CARD_BG,
+                darii_image(16),
+                ft.Text("この提案についてダリーに聞く", size=12, color=CARD_BG,
                         weight=ft.FontWeight.W_600),
             ], spacing=4, alignment=ft.MainAxisAlignment.CENTER),
             bgcolor=ORANGE,
@@ -758,7 +808,7 @@ class HomeView:
 
         if not suggestion_cards:
             suggestion_cards.append(ft.Container(
-                content=ft.Text("マシンからの提案はまだありません",
+                content=ft.Text("ダリーからの提案はまだありません",
                                 size=13, color=LIGHT_TEXT, italic=True),
                 padding=ft.padding.symmetric(vertical=6),
             ))
@@ -792,8 +842,8 @@ class HomeView:
         return ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=20, color=ORANGE),
-                    ft.Text("Machine", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    darii_image(22),
+                    ft.Text("ダリー", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
                     ft.Container(expand=True),
                     ft.IconButton(ft.Icons.REFRESH_ROUNDED, icon_size=18, icon_color=ORANGE,
                                   tooltip="文脈を分析して提案を生成",
@@ -815,6 +865,88 @@ class HomeView:
         """提案の文脈をMachine画面に渡して遷移する。"""
         if self._on_navigate:
             self._on_navigate(4)
+
+    # ==================================================================
+    # Widget: Gmail
+    # ==================================================================
+    def _widget_gmail(self) -> ft.Container | None:
+        """Google認証済みの場合のみGmailウィジェットを表示する。"""
+        from ..google_auth import is_authenticated, get_user_email
+
+        if not is_authenticated():
+            return None
+
+        email = get_user_email() or "Gmail"
+
+        # 未読メール取得（UIスレッドなので軽量に）
+        items: list[ft.Control] = []
+        try:
+            from ..google_auth import get_credentials
+            creds = get_credentials()
+            if creds:
+                from googleapiclient.discovery import build
+                service = build("gmail", "v1", credentials=creds)
+                results = service.users().messages().list(
+                    userId="me", q="is:unread", maxResults=5,
+                ).execute()
+                messages = results.get("messages", [])
+                unread_count = results.get("resultSizeEstimate", 0)
+
+                items.append(ft.Row([
+                    ft.Icon(ft.Icons.MARK_EMAIL_UNREAD_ROUNDED, size=14, color="#EA4335"),
+                    ft.Text(f"未読 {unread_count}件", size=12,
+                            weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                ], spacing=6))
+
+                for m in messages[:3]:
+                    msg = service.users().messages().get(
+                        userId="me", id=m["id"], format="metadata",
+                        metadataHeaders=["Subject", "From"],
+                    ).execute()
+                    headers = {h["name"].lower(): h["value"]
+                               for h in msg.get("payload", {}).get("headers", [])}
+                    subject = headers.get("subject", "(件名なし)")
+                    sender = headers.get("from", "")
+                    # 差出人名だけ抽出
+                    if "<" in sender:
+                        sender = sender.split("<")[0].strip().strip('"')
+                    items.append(ft.Container(
+                        content=ft.Row([
+                            ft.Container(width=4, height=28, bgcolor="#EA4335", border_radius=2),
+                            ft.Column([
+                                ft.Text(subject, size=13, weight=ft.FontWeight.W_500,
+                                        color=DARK_TEXT, max_lines=1,
+                                        overflow=ft.TextOverflow.ELLIPSIS),
+                                ft.Text(sender, size=11, color=LIGHT_TEXT,
+                                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                            ], spacing=0, expand=True),
+                        ], spacing=8),
+                        padding=ft.padding.symmetric(vertical=2),
+                    ))
+                if not messages:
+                    items.append(ft.Text("未読メールはありません",
+                                         size=13, color=LIGHT_TEXT, italic=True))
+        except Exception:
+            items.append(ft.Text("メール取得に失敗しました",
+                                 size=12, color=CORAL, italic=True))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.MAIL_ROUNDED, size=20, color="#EA4335"),
+                    ft.Text("Gmail", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    ft.Container(expand=True),
+                    ft.Text(email.split("@")[0] if email else "",
+                            size=11, color=LIGHT_TEXT),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=6),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
 
     # ==================================================================
     # Widget: 通知
