@@ -2,8 +2,7 @@
 
 **「暮らしをHackせよ！」**
 
-<!-- ホーム画面のスクリーンショットをここにドラッグ&ドロップ -->
-![LifeScript Home](https://github.com/user-attachments/assets/placeholder)
+<img width="1624" height="982" alt="スクリーンショット 2026-03-17 20 48 15" src="https://github.com/user-attachments/assets/70c68c20-c9bb-4c1b-99a4-d23fecd54e67" />
 
 LifeScript は、あなたの生活文脈を理解して能動的に動く"相棒"—— **ダリー** を育てるためのDSL（ドメイン固有言語）です。
 
