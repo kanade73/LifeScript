@@ -13,6 +13,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from .. import llm as _llm
+from ..holidays import get_holiday_dates_between
 
 from ..exceptions import CompileError
 from ..functions import FUNCTION_DESCRIPTIONS
@@ -97,6 +98,8 @@ _DAY_MAP = {
     "日": 6,
 }
 _DAILY_KEYS = {"毎日", "daily", "everyday"}
+_WEEKDAY_ONLY_KEYS = {"平日", "平日のみ", "weekday", "weekdays"}
+_WEEKEND_HOLIDAY_KEYS = {"土日祝", "土日祝のみ", "weekend_holiday", "weekend_holidays"}
 
 
 def _strip_quotes(text: str) -> str:
@@ -151,6 +154,23 @@ def _next_dates_for_weekday(weekday: int, weeks: int = 4) -> list[date]:
     return dates
 
 
+def _date_window(weeks: int = 4) -> tuple[date, date]:
+    today = datetime.now(_JST).date()
+    start = today - timedelta(days=today.weekday())
+    end = start + timedelta(days=weeks * 7 - 1)
+    return start, end
+
+
+def _dates_in_window(weeks: int = 4) -> list[date]:
+    start, end = _date_window(weeks=weeks)
+    result: list[date] = []
+    cur = start
+    while cur <= end:
+        result.append(cur)
+        cur += timedelta(days=1)
+    return result
+
+
 def _target_weekdays(day_key: str) -> list[int]:
     if day_key in _DAILY_KEYS:
         return [0, 1, 2, 3, 4, 5, 6]
@@ -159,11 +179,44 @@ def _target_weekdays(day_key: str) -> list[int]:
     raise CompileError(f"repeat_10min の曜日が正しくありません。: {day_key}")
 
 
+def _resolve_dates_for_key(
+    day_key: str,
+    *,
+    weeks: int,
+    model: str,
+    api_base: str | None,
+) -> list[date]:
+    if day_key in _DAY_MAP:
+        return _next_dates_for_weekday(_DAY_MAP[day_key], weeks=weeks)
+    if day_key in _DAILY_KEYS:
+        return _dates_in_window(weeks=weeks)
+
+    start, end = _date_window(weeks=weeks)
+    try:
+        holidays = get_holiday_dates_between(start, end, model=model, api_base=api_base)
+    except Exception:
+        holidays = set()
+    days = _dates_in_window(weeks=weeks)
+
+    if day_key in _WEEKDAY_ONLY_KEYS:
+        return [d for d in days if d.weekday() < 5 and d not in holidays]
+    if day_key in _WEEKEND_HOLIDAY_KEYS:
+        return [d for d in days if d.weekday() >= 5 or d in holidays]
+
+    raise CompileError(f"repeat_10min の曜日が正しくありません。: {day_key}")
+
+
 def _to_iso(d: date, t: time) -> str:
     return datetime.combine(d, t, tzinfo=_JST).isoformat()
 
 
-def _expand_repeat_10min_block(block_lines: list[str], base_indent: int) -> list[str]:
+def _expand_repeat_10min_block(
+    block_lines: list[str],
+    base_indent: int,
+    *,
+    model: str,
+    api_base: str | None,
+) -> list[str]:
     current_day: str | None = None
     generated: list[str] = []
 
@@ -176,7 +229,13 @@ def _expand_repeat_10min_block(block_lines: list[str], base_indent: int) -> list
 
         if indent == base_indent + 2 and stripped.endswith(":"):
             day = _strip_quotes(stripped[:-1].strip())
-            _target_weekdays(day)
+            if (
+                day not in _DAY_MAP
+                and day not in _DAILY_KEYS
+                and day not in _WEEKDAY_ONLY_KEYS
+                and day not in _WEEKEND_HOLIDAY_KEYS
+            ):
+                raise CompileError(f"repeat_10min の曜日が正しくありません。: {day}")
             current_day = day
             continue
 
@@ -191,14 +250,18 @@ def _expand_repeat_10min_block(block_lines: list[str], base_indent: int) -> list
                 raise CompileError("repeat_10min の予定名が空です")
 
             slots = _parse_time_expr(time_expr)
-            for weekday in _target_weekdays(current_day):
-                for d in _next_dates_for_weekday(weekday, weeks=4):
-                    for start_t, end_t in slots:
-                        title_escaped = title.replace('"', '\\"')
-                        generated.append(
-                            f'calendar.add("{title_escaped}", start="{_to_iso(d, start_t)}", '
-                            f'end="{_to_iso(d, end_t)}", note="repeat_10min")'
-                        )
+            for d in _resolve_dates_for_key(
+                current_day,
+                weeks=4,
+                model=model,
+                api_base=api_base,
+            ):
+                for start_t, end_t in slots:
+                    title_escaped = title.replace('"', '\\"')
+                    generated.append(
+                        f'calendar.add("{title_escaped}", start="{_to_iso(d, start_t)}", '
+                        f'end="{_to_iso(d, end_t)}", note="repeat_10min")'
+                    )
 
     if not generated:
         raise CompileError("repeat_10min ブロックが空か、形式が正しくありません。")
@@ -206,7 +269,7 @@ def _expand_repeat_10min_block(block_lines: list[str], base_indent: int) -> list
     return generated
 
 
-def _expand_repeat_10min(lifescript_code: str) -> str:
+def _expand_repeat_10min(lifescript_code: str, *, model: str, api_base: str | None) -> str:
     lines = lifescript_code.splitlines()
     if not lines:
         return lifescript_code
@@ -236,7 +299,14 @@ def _expand_repeat_10min(lifescript_code: str) -> str:
             block_lines.append(cur)
             i += 1
 
-        output.extend(_expand_repeat_10min_block(block_lines, base_indent=base_indent))
+        output.extend(
+            _expand_repeat_10min_block(
+                block_lines,
+                base_indent=base_indent,
+                model=model,
+                api_base=api_base,
+            )
+        )
 
     return "\n".join(output)
 
@@ -319,7 +389,11 @@ class Compiler:
 
     def compile(self, lifescript_code: str) -> dict[str, Any]:
         """LifeScript を Python にコンパイルする。"""
-        expanded_code = _expand_repeat_10min(lifescript_code)
+        expanded_code = _expand_repeat_10min(
+            lifescript_code,
+            model=self.model,
+            api_base=self.api_base,
+        )
 
         key = _cache_key(expanded_code)
         if key in _cache:
@@ -347,7 +421,11 @@ class Compiler:
         self, lifescript_code: str, python_code: str, error: str
     ) -> dict[str, Any]:
         """実行時エラーが発生した Python を LLM に修正させる。"""
-        expanded_code = _expand_repeat_10min(lifescript_code)
+        expanded_code = _expand_repeat_10min(
+            lifescript_code,
+            model=self.model,
+            api_base=self.api_base,
+        )
 
         key = _cache_key(expanded_code)
         _cache.pop(key, None)

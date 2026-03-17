@@ -11,12 +11,14 @@
 from __future__ import annotations
 
 import calendar as cal_mod
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 
 import flet as ft
 
 from ..database.client import db_client
+from ..holidays import get_month_holidays
 from ..scheduler.scheduler import LifeScriptScheduler
 from ..traits import gather_all_traits
 from .app import (
@@ -460,6 +462,13 @@ class HomeView:
         year = self._cal_year
         month = self._cal_month
         today = datetime.now()
+        holidays_by_day: dict[int, str] = {}
+        try:
+            model = os.getenv("LIFESCRIPT_MODEL", "gemini/gemini-2.5-flash")
+            month_holidays = get_month_holidays(year, month, model=model)
+            holidays_by_day = {d.day: name for d, name in month_holidays.items()}
+        except Exception:
+            holidays_by_day = {}
 
         # イベントを取得（日 → タイトルリストのマッピング）
         events_by_day: dict[int, list[str]] = {}
@@ -525,6 +534,7 @@ class HomeView:
                 else:
                     is_today = (day == today.day and month == today.month and year == today.year)
                     day_events = events_by_day.get(day, [])
+                    holiday_name = holidays_by_day.get(day, "")
 
                     # 日番号
                     day_label = ft.Text(
@@ -542,6 +552,18 @@ class HomeView:
 
                     # イベントラベル（最大2件）
                     ev_labels: list[ft.Control] = []
+                    if holiday_name:
+                        ev_labels.append(ft.Container(
+                            content=ft.Text(
+                                holiday_name[:6], size=9, color=CARD_BG,
+                                max_lines=1, overflow=ft.TextOverflow.CLIP,
+                                no_wrap=True,
+                            ),
+                            bgcolor=CORAL,
+                            border_radius=3,
+                            padding=ft.padding.symmetric(horizontal=3, vertical=1),
+                            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        ))
                     for i, title in enumerate(day_events[:2]):
                         clr = _ev_colors[i % len(_ev_colors)]
                         ev_labels.append(ft.Container(
