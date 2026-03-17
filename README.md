@@ -1,4 +1,4 @@
-# LifeScript
+<h1><img src="pictures/darii.png" width="40" align="absmiddle" /> LifeScript</h1>
 
 **「暮らしをHackせよ！」**
 
