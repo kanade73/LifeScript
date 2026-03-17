@@ -74,7 +74,7 @@ class DashboardView:
 
         machine_logs_section = ft.Container(
             content=ft.Column([
-                ft.Text("マシンログ", size=14, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
+                ft.Text("ダリーログ", size=14, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
                 self._machine_logs_list,
             ], spacing=8, expand=True),
             expand=True,

@@ -47,5 +47,16 @@ dmypy.json
 # Archives
 *.zip
 
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+
+# Old docs / SQL (removed from tracking)
+BEGINNER_TASKS.md
+STRATEGY.md
+ARCHITECTURE.md
+schema.sql
+supabase_rls_policies.sql
+
 # Claude Code project memory
 .claude/

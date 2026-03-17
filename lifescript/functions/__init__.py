@@ -7,6 +7,7 @@ from .notify import notify
 from .calendar import calendar_add, calendar_read, calendar_suggest
 from .web import web_fetch
 from .widget import widget_show
+from .gmail import gmail_unread, gmail_search, gmail_summarize, gmail_send
 
 # DSL内で使える関数名 → 実際のPython関数のマッピング
 FUNCTION_MAP: dict[str, callable] = {
@@ -16,6 +17,10 @@ FUNCTION_MAP: dict[str, callable] = {
     "calendar_suggest": calendar_suggest,
     "web_fetch": web_fetch,
     "widget_show": widget_show,
+    "gmail_unread": gmail_unread,
+    "gmail_search": gmail_search,
+    "gmail_summarize": gmail_summarize,
+    "gmail_send": gmail_send,
 }
 
 # バリデータ用: 許可される関数名の集合
@@ -52,5 +57,25 @@ FUNCTION_DESCRIPTIONS: list[dict[str, str]] = [
         "name": "widget_show",
         "signature": 'widget_show(name: str, content: str, icon: str = "article")',
         "description": "ホーム画面にカスタムウィジェットを表示/更新する。nameがウィジェットのタイトルになる。スクリプトが実行されるたびに内容が最新化される。",
+    },
+    {
+        "name": "gmail_unread",
+        "signature": "gmail_unread(limit: int = 10) -> list[dict]",
+        "description": "未読メールを取得。各要素は {subject, from, date, snippet, body} を持つdict。Google認証が必要。",
+    },
+    {
+        "name": "gmail_search",
+        "signature": "gmail_search(query: str, limit: int = 10) -> list[dict]",
+        "description": 'Gmailを検索。query はGmail検索構文（例: "from:amazon.co.jp", "subject:請求書", "newer_than:1d"）。Google認証が必要。',
+    },
+    {
+        "name": "gmail_summarize",
+        "signature": "gmail_summarize(limit: int = 5) -> str",
+        "description": "未読メールをLLMで要約して返す。重要度順に整理される。widget_showと組み合わせてホーム画面に表示可能。Google認証が必要。",
+    },
+    {
+        "name": "gmail_send",
+        "signature": 'gmail_send(to: str, subject: str, body: str) -> str',
+        "description": "メールを送信する。Google認証が必要。",
     },
 ]

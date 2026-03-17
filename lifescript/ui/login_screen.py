@@ -8,7 +8,7 @@ import flet as ft
 
 from .app import (
     BG, BLUE, CARD_BG, CORAL, DARK_TEXT,
-    GREEN, LIGHT_TEXT, MID_TEXT, YELLOW,
+    GREEN, LIGHT_TEXT, MID_TEXT, YELLOW, darii_image,
 )
 
 
@@ -111,53 +111,32 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
             _set_error("パスワードは6文字以上にしてください")
             return
 
-        import os
-        url = os.getenv("SUPABASE_URL", "")
-        key = os.getenv("SUPABASE_ANON_KEY", "")
-        if not url or not key:
-            _set_error("Supabase の設定がありません (.env を確認)")
-            return
+        from ..auth import sign_in, sign_up
 
         try:
-            from supabase import create_client
-            client = create_client(url, key)
-
             if _mode[0] == "signup":
-                resp = client.auth.sign_up({
-                    "email": email,
-                    "password": password,
-                })
-                if resp.user:
-                    _set_success("アカウントを作成しました")
-                    on_success({
-                        "id": resp.user.id,
-                        "email": resp.user.email,
-                    })
-                else:
-                    _set_error("アカウント作成に失敗しました")
+                user = sign_up(email, password)
+                _set_success("アカウントを作成しました")
+                on_success(user)
             else:
-                resp = client.auth.sign_in_with_password({
-                    "email": email,
-                    "password": password,
-                })
-                if resp.user:
-                    on_success({
-                        "id": resp.user.id,
-                        "email": resp.user.email,
-                    })
-                else:
-                    _set_error("ログインに失敗しました")
+                user = sign_in(email, password)
+                on_success(user)
         except Exception as ex:
             msg = str(ex)
             if "Invalid login" in msg or "invalid" in msg.lower():
                 _set_error("メールアドレスまたはパスワードが正しくありません")
             elif "already" in msg.lower() or "registered" in msg.lower():
                 _set_error("このメールアドレスは既に登録されています")
+            elif "設定がありません" in msg:
+                _set_error(msg)
             else:
-                _set_error(f"エラー: {msg[:100]}")
+                _set_error(f"エラー: {msg[:150]}")
 
     def _on_skip(e: ft.ControlEvent) -> None:
-        on_success({"id": "local", "email": ""})
+        from ..auth import save_session
+        user = {"id": "local", "email": "local"}
+        save_session(user)
+        on_success(user)
 
     action_button.on_click = _on_submit
     toggle_link.on_click = _toggle_mode
@@ -171,21 +150,21 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
     return ft.Container(
         content=ft.Column([
             ft.Container(expand=True),
-            # ロゴ
+            # ロゴ — ダリー
             ft.Container(
-                content=ft.Text("LS", size=40, weight=ft.FontWeight.W_900, color=CARD_BG),
-                width=80, height=80, bgcolor=BLUE,
+                content=darii_image(72),
+                width=80, height=80,
                 border_radius=20, alignment=ft.Alignment(0, 0),
                 shadow=ft.BoxShadow(
                     spread_radius=0, blur_radius=24,
-                    color=f"{BLUE}33", offset=ft.Offset(0, 6),
+                    color=f"{YELLOW}33", offset=ft.Offset(0, 6),
                 ),
             ),
             ft.Container(height=16),
             ft.Text("LifeScript", size=28, weight=ft.FontWeight.W_800, color=DARK_TEXT),
             ft.Container(height=4),
             ft.Text(
-                "あなたの生活文脈を読み取り、能動的に動くマシン",
+                "あなたの生活に寄り添うロボット — ダリー",
                 size=14, color=MID_TEXT,
             ),
             ft.Container(height=36),

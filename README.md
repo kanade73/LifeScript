@@ -1,216 +1,216 @@
 # LifeScript
 
-**「暮らしにコードを書け」**
+**「暮らしをHackせよ！」**
 
-LifeScript is a DSL (Domain Specific Language) that sits between natural language and Python.
-You describe your *intent* in LifeScript, an LLM compiles it to Python, and it acts on your life through real APIs.
+LifeScript は、あなたの生活文脈を理解して能動的に動く"相棒"—— **ダリー** を育てるためのDSL（ドメイン固有言語）です。
+
+ユーザーはルールを書くのではなく、**自分の文脈**をダリーに伝えるだけ。ダリーはカレンダーや通知を通じて、ユーザーが設定していない行動まで提案・実行します。
 
 ```
-Natural language (intent) → LifeScript (description) → Python (execution) → API (real-world effect)
+リマインドアプリ   → 人間がルールを考えて、アプリが実行する
+LifeScript        → 人間が「自分の文脈」を渡すと、ダリーが判断して動く
 ```
 
 ---
 
-## Quick Start
+## 特徴
 
-### 1. Prerequisites
+- **コンパイル時のみLLM使用** — 実行時はPythonを直接実行するためコストゼロ
+- **2層セキュリティ** — AST静的解析 + RestrictedPython サンドボックス
+- **デュアルDB** — Supabase（クラウド）/ SQLite（オフライン）を自動切替
+- **関数ライブラリ拡張 = ロードマップ** — 関数が増えるほどDSLの表現力が上がる
+- **iOS + PC 対応** — SwiftUI ネイティブアプリ + Flet デスクトップアプリ
+
+---
+
+## アーキテクチャ
+
+```
+┌──────────────┐    REST API     ┌───────────────────────────┐
+│  iOS App     │ ◄─────────────► │  Python Backend           │
+│  (SwiftUI)   │                 │                           │
+└──────┬───────┘                 │  Compiler  (LiteLLM/Gemini)│
+       │                         │  Validator (RestrictedPython)│
+       │  Supabase               │  Scheduler (APScheduler)   │
+       │  (直接CRUD)             │  Sandbox   (RestrictedPython)│
+       ▼                         │  Gmail API (OAuth 2.0)     │
+┌──────────────┐                 └────────────┬──────────────┘
+│  Supabase    │ ◄────────────────────────────┘
+│  (PostgreSQL) │
+└──────────────┘
+┌───────────────────────────┐
+│  Flet Desktop App (PC)    │  ← デモ・開発用
+│  同一Pythonプロセス内で動作  │
+└───────────────────────────┘
+```
+
+### 処理フロー
+
+```
+DSL入力 → Gemini でPythonに変換 → AST解析で安全性検証
+→ RestrictedPython サンドボックスで実行 → APScheduler でジョブ登録
+→ ダリーが能動的に提案・通知
+```
+
+---
+
+## 技術スタック
+
+| レイヤー | 技術 |
+|---|---|
+| iOS フロントエンド | SwiftUI, Supabase Swift SDK |
+| PC フロントエンド | Flet (Material 3) |
+| DSLコンパイル | LiteLLM → Gemini 2.5 Flash / Pro |
+| セキュリティ | RestrictedPython, AST解析 (validator.py) |
+| ジョブ実行 | APScheduler (cron / interval / once) |
+| データベース | Supabase (PostgreSQL) / SQLite (ローカルフォールバック) |
+| 認証 | Supabase Auth, Google OAuth 2.0 |
+| 外部連携 | Gmail API, httpx |
+| 配布 | PyInstaller (.app), Xcode (iOS) |
+
+---
+
+## DSL の書き方
+
+LifeScript では自然言語に近い記法で生活ルールを記述できます。LLMがPythonに変換するため、厳密な構文を覚える必要はありません。
+
+```yaml
+# 自分の特性を定義（ダリーへの文脈提供）
+traits:
+  朝は弱い → notify() は 8:00 以降
+  バイトの許容は週3まで
+
+# カレンダーベースの自動化
+when calendar.read("バイト").count_this_week >= 4:
+  calendar.suggest("回復タイム", on="next_free_morning")
+
+# 継続の見守り
+when streak.count("運動") >= 7:
+  machine.suggest("1週間継続！次の目標を設定しようか？")
+```
+
+### 利用可能な関数
+
+| 関数 | 説明 |
+|---|---|
+| `notify(message, at?)` | 通知を送る（時刻指定可） |
+| `calendar.add(title, start, end?, note?)` | カレンダーにイベント追加 |
+| `calendar.read(keyword?, range?)` | イベントを検索・取得 |
+| `calendar.suggest(title, on, note?)` | イベントを提案 |
+| `gmail.unread(limit?)` | 未読メールを取得 |
+| `gmail.search(query, limit?)` | メールを検索 |
+| `gmail.summarize(limit?)` | 未読メールをAI要約 |
+| `gmail.send(to, subject, body)` | メールを送信 |
+| `web.fetch(url)` | Webページを取得・要約 |
+
+---
+
+## セットアップ
+
+### 必要なもの
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- A Supabase project (free tier works)
-- An LLM API key (OpenAI) **or** a local Ollama instance
+- Supabase プロジェクト（無料枠で可）
+- Gemini API キー（Google AI Studio 無料枠で可）
 
-### 2. Install
+### インストール
 
 ```bash
-git clone https://github.com/your-org/lifescript.git
-cd lifescript
+git clone https://github.com/kanade73/LifeScript.git
+cd LifeScript
 uv sync
 ```
 
-### 3. Configure
+### 環境設定
 
 ```bash
 cp .env.example .env
-# Edit .env with your Supabase URL, Anon Key, and OpenAI API key
+# .env を編集して各種APIキーを設定
 ```
 
-### 4. Set up the database
+```bash
+# .env の主要項目
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+LIFESCRIPT_MODEL=gemini/gemini-2.5-flash
+GEMINI_API_KEY=your-gemini-key
+```
 
-Run `schema.sql` in the **Supabase SQL Editor** (Dashboard → SQL Editor → New query).
-
-### 5. Run
+### 起動
 
 ```bash
 uv run lifescript
 ```
 
-Or directly:
+### macOS アプリとしてビルド
 
 ```bash
-uv run python -m lifescript
+pyinstaller LifeScript.spec --noconfirm
+# → dist/LifeScript.app が生成される
 ```
 
 ---
 
-## LifeScript Syntax
-
-```javascript
-// Send a LINE message every morning at 8:00
-every day {
-  when fetch(time.now) == "08:00" {
-    notify(LINE, "おはようございます")
-  }
-}
-
-// Hourly reminder
-every 1h {
-  notify(LINE, "1時間が経過しました")
-}
-
-// Variable and condition
-let now = fetch(time.now)
-if now >= "09:00" and now <= "18:00" {
-  notify(LINE, "勤務時間内です")
-}
-
-// Repeat
-repeat 3 {
-  notify(LINE, "ping")
-}
-```
-
-### Keywords
-
-| Keyword | Description |
-|---|---|
-| `every day / Nh / Nm` | Periodic trigger |
-| `when <cond> { }` | Conditional block |
-| `fetch(time.now)` | Current time as `"HH:MM"` |
-| `fetch(time.today)` | Today's weekday and date |
-| `notify(LINE, "msg")` | Send LINE message |
-| `let x = expr` | Variable definition |
-| `if / else` | Conditional |
-| `repeat N { }` | Loop N times |
-
----
-
-## Architecture
-
-```
-[Textual TUI]
-  ↓ LifeScript code
-[Compiler] → LiteLLM → [LLM] → Python
-  ↓
-[Validator] (AST whitelist check)
-  ↓
-[Supabase] (rule storage)
-  ↓
-[APScheduler] (background jobs)
-  ↓
-[RestrictedPython sandbox]
-  ↓
-[Plugins: time_plugin, line_plugin]
-  ↓
-[LINE Messaging API]
-```
-
-**LLM is called only at compile time and on runtime errors** — token cost is minimised.
-
-### Project layout
+## プロジェクト構成
 
 ```
 lifescript/
-├── compiler/       # LLM-based LifeScript→Python compiler + AST validator
-├── database/       # Supabase client (in-memory fallback if unconfigured)
-├── plugins/        # time_plugin, line_plugin (extend by adding files here)
-├── sandbox/        # RestrictedPython execution environment
-├── scheduler/      # APScheduler job manager
-└── ui/             # Textual TUI (main_screen, settings_screen)
+├── compiler/          # DSL → Python コンパイラ（LLM使用）
+│   ├── compiler.py    #   LiteLLM経由でGeminiを呼び出し
+│   └── validator.py   #   AST解析によるホワイトリスト検証
+├── sandbox/           # RestrictedPython 実行環境
+│   └── runner.py      #   30秒タイムアウト、レート制限付き
+├── scheduler/         # APScheduler ジョブ管理
+│   └── scheduler.py   #   cron / interval / once トリガー
+├── database/          # デュアルバックエンド DB
+│   └── client.py      #   Supabase ↔ SQLite 自動切替
+├── functions/         # DSLから呼べる関数ライブラリ
+│   ├── calendar.py    #   カレンダー操作
+│   ├── notify.py      #   通知
+│   ├── gmail.py       #   Gmail連携
+│   ├── web.py         #   Web取得・要約
+│   └── widget.py      #   ホーム画面ウィジェット
+├── ui/                # Flet デスクトップUI
+│   ├── app.py         #   アプリケーションルート
+│   ├── home_view.py   #   ホーム画面
+│   ├── main_screen.py #   IDEエディタ
+│   ├── dashboard_view.py
+│   ├── concierge_view.py  # ダリーチャット
+│   ├── reference_view.py  # 関数リファレンス
+│   └── settings_view.py   # 設定（Google認証等）
+├── auth.py            # Supabase 認証・セッション管理
+├── google_auth.py     # Google OAuth 2.0
+├── chat.py            # チャットエンジン（IDE / コンシェルジュ）
+├── context_analyzer.py # 文脈分析・能動提案（3時間毎）
+├── llm.py             # LLM呼び出しラッパー（リトライ+フォールバック）
+├── traits.py          # ユーザー特性の抽出
+└── api.py             # iOS向け REST API
+
+ios/LifeScript/        # SwiftUI iOSアプリ
 ```
 
 ---
 
-## Settings (in-app)
-
-Press **⚙ Settings** in the UI to configure:
-
-- **Supabase** — URL + Anon Key
-- **LINE Messaging API** — Channel Access Token + LINE User ID
-- **LLM** — model name (e.g. `gpt-4o-mini`, `ollama/qwen2.5-coder:7b`) and optional API base URL
-
-Settings are persisted to `.env`.
-
----
-
-## LINE Setup
-
-1. Create a **Messaging API channel** at [LINE Developers](https://developers.line.biz/).
-2. Issue a **Channel Access Token** (long-lived) from the channel console.
-3. Get your **LINE User ID** from the channel console → Basic Settings → Your user ID.
-4. Enter both in the Settings screen.
-
----
-
-## Local LLM (Ollama)
+## 開発
 
 ```bash
-ollama pull qwen2.5-coder:7b
-# In .env:
-LITELLM_MODEL=ollama/qwen2.5-coder:7b
-LITELLM_API_BASE=http://localhost:11434
+uv sync --group dev
+uv run ruff check .     # Lint
+uv run ruff format .    # Format
+uv run pytest           # Test
 ```
 
 ---
 
-## Development
+## Gmail 連携（オプション）
 
-```bash
-uv sync --group dev   # install dev dependencies
-uv run ruff check .   # lint
-uv run ruff format .  # format
-uv run pytest         # tests
-```
+1. [Google Cloud Console](https://console.cloud.google.com/) でOAuth 2.0クライアントIDを作成
+2. `credentials.json` を `~/.lifescript/google_credentials.json` に配置
+3. アプリの設定画面から「Googleアカウントを連携」を実行
 
 ---
 
-## Adding a Plugin
-
-1. Create `lifescript/plugins/my_plugin.py` implementing the `Plugin` base class.
-2. Expose a top-level function (e.g. `def notify_slack(message: str) -> None`).
-3. Add the function name to `ALLOWED_CALLS` in `compiler/validator.py`.
-4. Add the function to the sandbox globals in `sandbox/runner.py`.
-5. Update the LLM system prompt in `compiler/compiler.py`.
-
----
-
-## License
+## ライセンス
 
 MIT © 2026 kanade
-
----
-
-## Git コマンド集
-
-### 基本の流れ（変更を保存して反映する）
-
-| コマンド | 説明 |
-|---|---|
-| `git add (ファイル名)` | ステージング |
-| `git commit -m (何かしらのコメント)` | これが変更を保存するやつ（ローカルに） |
-| `git push origin (ブランチ名)` | これをしてようやくGitHubのサイトに反映される。originが何かは気にしなくて良い |
-
-### ブランチ
-
-| コマンド | 説明 |
-|---|---|
-| `git branch` | 今いるブランチと今あるブランチがわかる |
-| `git checkout -b (ブランチ名)` | 新しいブランチを作ってここに移動する(-b) |
-| `git checkout (ブランチ名)` | このブランチ名のブランチに移動する |
-
-### リモートとの同期
-
-| コマンド | 説明 |
-|---|---| 
-| `git fetch` | リモートの最新情報を取得 |
-| `git rebase origin/(ファイル名)` | ファイル名の最新情報を読み込む | 

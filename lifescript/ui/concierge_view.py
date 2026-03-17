@@ -16,16 +16,16 @@ from ..traits import gather_all_traits
 from ..database.client import db_client
 from .app import (
     BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE, PURPLE,
-    DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG,
+    DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG, darii_image,
 )
 
 _BORDER = "#E8E4DC"
 _MEMORY_BG = "#FDFCFA"
 
 _WELCOME_MESSAGES = [
-    "何か予定を入れたいときは「〇〇日に〇〇入れて」と伝えてください。",
-    "カレンダーの内容について質問もできます。",
-    "LifeScript のルールを作りたいときも相談してください。",
+    "予定を入れたいときは「〇〇日に〇〇入れて」って言ってね！",
+    "カレンダーの内容について聞いてくれてもいいよ。",
+    "LifeScript のルールを作りたいときも相談してね！",
 ]
 
 
@@ -42,7 +42,7 @@ class ConciergeView:
             expand=True, spacing=6, padding=ft.padding.symmetric(horizontal=16, vertical=8),
         )
         self._input = ft.TextField(
-            hint_text="マシンに話しかけてください…",
+            hint_text="ダリーに話しかけてね…",
             text_size=14,
             border_radius=24,
             bgcolor=CARD_BG,
@@ -76,14 +76,14 @@ class ConciergeView:
         header = ft.Container(
             content=ft.Row([
                 ft.Container(
-                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=24, color=CARD_BG),
-                    width=40, height=40, bgcolor=BLUE, border_radius=12,
+                    content=darii_image(36),
+                    width=40, height=40, border_radius=12,
                     alignment=ft.Alignment(0, 0),
                 ),
                 ft.Container(width=10),
                 ft.Column([
-                    ft.Text("マシン", size=20, weight=ft.FontWeight.W_800, color=DARK_TEXT),
-                    ft.Text("あなたの生活を把握するコンシェルジュ", size=12, color=MID_TEXT),
+                    ft.Text("ダリー", size=20, weight=ft.FontWeight.W_800, color=DARK_TEXT),
+                    ft.Text("あなたの生活に寄り添うロボット", size=12, color=MID_TEXT),
                 ], spacing=1),
                 ft.Container(expand=True),
                 self._memory_btn,
@@ -145,7 +145,7 @@ class ConciergeView:
                         ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, size=18, color=BLUE),
                         ft.Text("メモリ", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
                         ft.Container(width=4),
-                        ft.Text("マシンが把握しているあなたの情報", size=11, color=MID_TEXT),
+                        ft.Text("ダリーが把握しているあなたの情報", size=11, color=MID_TEXT),
                         ft.Container(expand=True),
                         ft.IconButton(
                             ft.Icons.ADD_ROUNDED, icon_size=18, icon_color=BLUE,
@@ -206,7 +206,7 @@ class ConciergeView:
             self._memory_list.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=14, color=ORANGE),
-                    ft.Text("マシンの観察", size=11, weight=ft.FontWeight.W_600, color=ORANGE),
+                    ft.Text("ダリーの観察", size=11, weight=ft.FontWeight.W_600, color=ORANGE),
                 ], spacing=4),
                 padding=ft.padding.only(left=4, top=12, bottom=4),
             ))
@@ -403,11 +403,11 @@ class ConciergeView:
         items = [
             ft.Row([
                 ft.Container(
-                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=20, color=CARD_BG),
-                    width=32, height=32, bgcolor=BLUE, border_radius=10,
+                    content=darii_image(28),
+                    width=32, height=32, border_radius=10,
                     alignment=ft.Alignment(0, 0),
                 ),
-                ft.Text("マシンです。何でも聞いてください！", size=14,
+                ft.Text("ダリーだよ！なんでも聞いてね！", size=14,
                         weight=ft.FontWeight.W_600, color=DARK_TEXT),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Container(height=4),

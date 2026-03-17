@@ -48,12 +48,12 @@ class ReferenceView:
             title="LifeScript とは",
             children=[
                 self._para(
-                    "LifeScript は「マシン」という相棒に自分の生活文脈を伝えるための DSL です。"
+                    "LifeScript は「ダリー」という相棒に自分の生活文脈を伝えるための DSL です。"
                     "ユーザーが書いたルールは LLM によって Python にコンパイルされ、"
                     "スケジューラが自動的に実行します。"
                 ),
                 self._para(
-                    "書けば書くほどマシンが賢くなる — "
+                    "書けば書くほどダリーが賢くなる — "
                     "関数ライブラリの拡充がそのままプロダクトのロードマップです。"
                 ),
                 self._label("基本構造"),
@@ -147,7 +147,7 @@ class ReferenceView:
                 "name": "calendar.suggest",
                 "signature": 'calendar_suggest(title, on, note?)',
                 "color": PURPLE,
-                "desc": "イベントの提案を作成します。ホーム画面の「マシンの提案」に表示され、"
+                "desc": "イベントの提案を作成します。ホーム画面の「ダリーの提案」に表示され、"
                         "ユーザーが承認するとカレンダーに追加されます。",
                 "params": [
                     ("title", "str", "提案するイベントのタイトル"),
@@ -157,6 +157,61 @@ class ReferenceView:
                 "examples": [
                     'calendar_suggest("回復タイム", on="next_free_morning")',
                     'calendar_suggest("ストレッチ", on="tomorrow", note="15分")',
+                ],
+            },
+            {
+                "name": "gmail.unread",
+                "signature": "gmail_unread(limit?) -> list[dict]",
+                "color": "#EA4335",
+                "desc": "未読メールを取得します。各メールは subject, from, date, snippet, body を持ちます。"
+                        "Google認証が必要です（設定画面から連携）。",
+                "params": [
+                    ("limit", "int", "最大取得件数（デフォルト: 10, 最大: 20）"),
+                ],
+                "examples": [
+                    'emails = gmail_unread()',
+                    'emails = gmail_unread(limit=5)',
+                ],
+            },
+            {
+                "name": "gmail.search",
+                "signature": "gmail_search(query, limit?) -> list[dict]",
+                "color": "#EA4335",
+                "desc": "Gmailを検索します。Gmail検索構文が使えます。Google認証が必要です。",
+                "params": [
+                    ("query", "str", 'Gmail検索クエリ（例: "from:amazon.co.jp", "subject:請求書"）'),
+                    ("limit", "int", "最大取得件数（デフォルト: 10）"),
+                ],
+                "examples": [
+                    'gmail_search("from:amazon.co.jp")',
+                    'gmail_search("subject:シフト newer_than:7d")',
+                ],
+            },
+            {
+                "name": "gmail.summarize",
+                "signature": "gmail_summarize(limit?) -> str",
+                "color": "#EA4335",
+                "desc": "未読メールをLLMで要約して返します。widget_showと組み合わせてホーム画面に表示できます。Google認証が必要です。",
+                "params": [
+                    ("limit", "int", "要約対象の最大件数（デフォルト: 5）"),
+                ],
+                "examples": [
+                    'summary = gmail_summarize()',
+                    'widget_show("メール要約", gmail_summarize(), icon="mail")',
+                ],
+            },
+            {
+                "name": "gmail.send",
+                "signature": "gmail_send(to, subject, body) -> str",
+                "color": "#EA4335",
+                "desc": "メールを送信します。Google認証が必要です。",
+                "params": [
+                    ("to", "str", "宛先メールアドレス"),
+                    ("subject", "str", "件名"),
+                    ("body", "str", "本文"),
+                ],
+                "examples": [
+                    'gmail_send("friend@example.com", "今日の予定", "10時に集合です")',
                 ],
             },
         ]
