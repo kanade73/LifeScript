@@ -161,17 +161,57 @@ def _highlight_dsl(code: str) -> list[ft.TextSpan]:
 
     return spans
 
-_DEFAULT_DSL = """\
-# === オートメーション（Save & Registerで定期実行） ===
-# 例: バイトが週4以上なら回復タイムを提案
+_DEFAULT_DSL = ""
+
+# ── テンプレートギャラリー ─────────────────────────────────────────
+_TEMPLATES = [
+    {
+        "icon": ft.Icons.CALENDAR_MONTH_ROUNDED,
+        "color": "#4262FF",
+        "title": "バイトが多い週に休息を提案",
+        "desc": "週のバイト回数をチェックして、多ければ回復タイムを提案します",
+        "dsl": """\
+# バイトが多い週に休息を提案
 when calendar.read("バイト").count_this_week >= 4:
   calendar.suggest("回復タイム", on="next_free_morning")
-
-# === スキル（Runで即時1回実行） ===
-# 例: サイトを取得してホームにウィジェット表示
-# result = web.fetch("https://example.com")
-# widget.show("まとめ", result)
-"""
+  notify("今週バイト多めだね。休息入れておいたよ")
+""",
+    },
+    {
+        "icon": ft.Icons.ARTICLE_ROUNDED,
+        "color": "#9B59B6",
+        "title": "ニュース記事を要約してウィジェット表示",
+        "desc": "Webページを取得し、LLMで要約してホーム画面に表示します",
+        "dsl": """\
+# ニュース記事を要約してウィジェット表示
+result = web.fetch("https://news.example.com")
+widget.show("今日のニュース", summarize(result))
+""",
+    },
+    {
+        "icon": ft.Icons.EMAIL_ROUNDED,
+        "color": "#00C875",
+        "title": "未読メールを通知",
+        "desc": "Gmailの未読メールをチェックして、重要なものを通知します",
+        "dsl": """\
+# 未読メールを通知
+when gmail.unread() >= 1:
+  notify("未読メールがあるよ: " + gmail.search("is:unread", limit=3))
+""",
+    },
+    {
+        "icon": ft.Icons.FITNESS_CENTER_ROUNDED,
+        "color": "#FFA500",
+        "title": "習慣トラッキング",
+        "desc": "運動の継続日数をカウントし、マイルストーンで褒めてくれます",
+        "dsl": """\
+# 運動の継続を追跡
+when streak.count("運動") >= 7:
+  notify("1週間継続おめでとう！この調子！")
+  calendar.suggest("ご褒美デー", on="next_free_day")
+""",
+    },
+]
 
 _BORDER = "#E8E4DC"
 _TAB_COLORS = [
@@ -238,12 +278,15 @@ class EditorView:
         )
         self._prev_editor_value = _DEFAULT_DSL
 
+        # ── テンプレートギャラリー（エディタが空のとき表示）───────
+        self._template_gallery = self._build_template_gallery()
+
         # ── タブバー ──────────────────────────────────────────
         self._tab_bar = ft.Row(spacing=2, scroll=ft.ScrollMode.AUTO)
 
-        # Stack でハイライト層の上にTextFieldを重ねる
-        editor_stack = ft.Stack(
-            [self._dsl_highlight_layer, self._editor],
+        # Stack でハイライト層の上にTextFieldを重ねる + テンプレート
+        self._editor_stack = ft.Stack(
+            [self._dsl_highlight_layer, self._editor, self._template_gallery],
             expand=True,
         )
 
@@ -253,7 +296,7 @@ class EditorView:
                     content=self._tab_bar,
                     padding=ft.padding.only(left=4, bottom=0),
                 ),
-                editor_stack,
+                self._editor_stack,
             ], spacing=0, expand=True),
             expand=2,
             border_radius=16,
@@ -565,6 +608,149 @@ class EditorView:
         return self._content
 
     # ==================================================================
+    # テンプレートギャラリー
+    # ==================================================================
+    def _build_template_gallery(self) -> ft.Container:
+        """エディタが空のとき表示するテンプレート選択UI。"""
+
+        def _make_card(tmpl: dict) -> ft.Container:
+            return ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Icon(tmpl["icon"], size=22, color="#FFFFFF"),
+                        width=40, height=40,
+                        bgcolor=tmpl["color"],
+                        border_radius=10,
+                        alignment=ft.Alignment(0, 0),
+                    ),
+                    ft.Column([
+                        ft.Text(tmpl["title"], size=13,
+                                weight=ft.FontWeight.W_600, color="#E8E4DC"),
+                        ft.Text(tmpl["desc"], size=11, color="#A09A93",
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ], spacing=2, expand=True),
+                ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(horizontal=16, vertical=12),
+                border_radius=12,
+                bgcolor="#3A3835",
+                border=ft.border.all(1, "#4A4845"),
+                on_click=lambda e, t=tmpl: self._select_template(t),
+                on_hover=lambda e: (
+                    setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                    e.control.update(),
+                ),
+                ink=True,
+            )
+
+        # 「ダリーに聞く」カード
+        darii_card = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=22, color="#FFFFFF"),
+                    width=40, height=40,
+                    bgcolor=COLORS["yellow"],
+                    border_radius=10,
+                    alignment=ft.Alignment(0, 0),
+                ),
+                ft.Column([
+                    ft.Text("ダリーに相談する", size=13,
+                            weight=ft.FontWeight.W_600, color="#E8E4DC"),
+                    ft.Text("何を自動化したいか話しかけると、ダリーがDSLを書いてくれます",
+                            size=11, color="#A09A93",
+                            max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ], spacing=2, expand=True),
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            border_radius=12,
+            bgcolor="#3A3835",
+            border=ft.border.all(1, COLORS["yellow"] + "44"),
+            on_click=lambda e: self._focus_chat(),
+            on_hover=lambda e: (
+                setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                e.control.update(),
+            ),
+            ink=True,
+        )
+
+        # 「空白から始める」カード
+        blank_card = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(ft.Icons.EDIT_NOTE_ROUNDED, size=22, color="#A09A93"),
+                    width=40, height=40,
+                    bgcolor="#2D2B27",
+                    border_radius=10,
+                    border=ft.border.all(1, "#4A4845"),
+                    alignment=ft.Alignment(0, 0),
+                ),
+                ft.Text("空白から書く", size=13, color="#A09A93"),
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            border_radius=12,
+            bgcolor="#3A3835",
+            on_click=lambda e: self._dismiss_gallery(),
+            on_hover=lambda e: (
+                setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                e.control.update(),
+            ),
+            ink=True,
+        )
+
+        gallery = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Container(height=20),
+                    ft.Text("何から始めますか？", size=18,
+                            weight=ft.FontWeight.W_700, color="#E8E4DC",
+                            text_align=ft.TextAlign.CENTER),
+                    ft.Text("テンプレートを選ぶか、ダリーに話しかけてみてください",
+                            size=12, color="#A09A93",
+                            text_align=ft.TextAlign.CENTER),
+                    ft.Container(height=8),
+                    *[_make_card(t) for t in _TEMPLATES],
+                    ft.Container(height=4),
+                    darii_card,
+                    blank_card,
+                ],
+                spacing=8,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            padding=ft.padding.symmetric(horizontal=32, vertical=16),
+            bgcolor=COLORS["editor_bg"],
+            expand=True,
+            visible=True,  # エディタが空なら表示
+        )
+        return gallery
+
+    def _select_template(self, tmpl: dict) -> None:
+        """テンプレートをエディタに挿入してギャラリーを非表示にする。"""
+        self._editor.value = tmpl["dsl"]
+        self._active_tab.dsl_text = tmpl["dsl"]
+        self._prev_editor_value = tmpl["dsl"]
+        self._dsl_highlight_text.spans = _highlight_dsl(tmpl["dsl"])
+        self._template_gallery.visible = False
+        self._page.update()
+
+    def _dismiss_gallery(self) -> None:
+        """テンプレートギャラリーを非表示にしてエディタにフォーカス。"""
+        self._template_gallery.visible = False
+        self._editor.focus()
+        self._page.update()
+
+    def _focus_chat(self) -> None:
+        """サイドバーをChatに切り替えてチャット入力にフォーカス。"""
+        self._template_gallery.visible = False
+        self._switch_sidebar("chat")
+        self._chat_input.focus()
+        self._page.update()
+
+    def _update_gallery_visibility(self) -> None:
+        """エディタの内容に応じてテンプレートギャラリーの表示を切り替える。"""
+        is_empty = not (self._editor.value or "").strip()
+        self._template_gallery.visible = is_empty
+
+    # ==================================================================
     # エディタ: 自動インデント + Tabキー
     # ==================================================================
     def _setup_tab_key(self) -> None:
@@ -596,6 +782,9 @@ class EditorView:
         val = self._editor.value or ""
         prev = self._prev_editor_value or ""
         self._prev_editor_value = val
+
+        # テンプレートギャラリーの表示切替
+        self._update_gallery_visibility()
 
         # ハイライト更新
         self._dsl_highlight_text.spans = _highlight_dsl(val)
@@ -685,6 +874,7 @@ class EditorView:
         self._editor.value = tab.dsl_text
         self._prev_editor_value = tab.dsl_text
         self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
+        self._update_gallery_visibility()
         compiled = tab.compiled
         if compiled:
             self._set_preview(compiled.get("code", ""))
@@ -700,6 +890,7 @@ class EditorView:
         self._active_tab = tab
         self._editor.value = ""
         self._dsl_highlight_text.spans = _highlight_dsl("")
+        self._template_gallery.visible = True  # 新規タブはギャラリー表示
         self._set_preview("# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
         self._page.update()
@@ -716,6 +907,7 @@ class EditorView:
             self._dsl_highlight_text.spans = _highlight_dsl(self._active_tab.dsl_text)
             compiled = self._active_tab.compiled
             self._set_preview(compiled.get("code", "") if compiled else "# コンパイル結果がここに表示されます")
+        self._update_gallery_visibility()
         self._rebuild_tab_bar()
         self._page.update()
 
@@ -884,6 +1076,7 @@ class EditorView:
         self._active_tab.dsl_text = self._editor.value
         self._prev_editor_value = self._editor.value
         self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
+        self._template_gallery.visible = False
         self._log(f"チャットからDSLを挿入しました", COLORS["green"])
         self._page.update()
 
@@ -902,6 +1095,7 @@ class EditorView:
         self._editor.value = current + snippet
         self._active_tab.dsl_text = self._editor.value
         self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
+        self._template_gallery.visible = False
         self._page.update()
 
     def _show_reference(self, e: ft.ControlEvent) -> None:
@@ -1118,6 +1312,7 @@ class EditorView:
         self._active_tab = tab
         self._editor.value = tab.dsl_text
         self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
+        self._update_gallery_visibility()
         self._set_preview(script.get("compiled_python", "# (empty)"))
         self._rebuild_tab_bar()
         self._log(f"{name} を開きました", COLORS["blue"])
