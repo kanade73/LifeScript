@@ -205,7 +205,18 @@ class EditorView:
         self._tabs: list[_Tab] = [_Tab(name="script.ls", dsl_text=_DEFAULT_DSL)]
         self._active_tab: _Tab = self._tabs[0]
 
-        # ── DSL Editor ────────────────────────────────────────
+        # ── DSL Editor（シンタックスハイライト付きオーバーレイ）───
+        # 背景: ハイライト済みテキスト（読み取り専用表示）
+        self._dsl_highlight_text = ft.Text(
+            spans=_highlight_dsl(_DEFAULT_DSL),
+            size=13,
+        )
+        self._dsl_highlight_layer = ft.Container(
+            content=self._dsl_highlight_text,
+            padding=ft.padding.all(16),
+        )
+
+        # 前面: 透明テキストの編集用TextField
         self._editor = ft.TextField(
             value=_DEFAULT_DSL,
             multiline=True,
@@ -213,11 +224,11 @@ class EditorView:
             expand=True,
             text_style=ft.TextStyle(
                 font_family=_CODE_FONT,
-                size=13, color=COLORS["editor_fg"],
+                size=13, color="#00000000",  # 完全透明（ハイライト層を見せる）
             ),
-            bgcolor=COLORS["editor_bg"],
+            bgcolor=ft.Colors.TRANSPARENT,
             border_color=ft.Colors.TRANSPARENT,
-            focused_border_color=COLORS["yellow"],
+            focused_border_color=ft.Colors.TRANSPARENT,
             border_radius=12,
             cursor_color=COLORS["yellow"],
             hint_text="LifeScript DSL を入力…",
@@ -225,12 +236,16 @@ class EditorView:
             content_padding=ft.padding.all(16),
             on_change=self._on_editor_change,
         )
-        # DSLシンタックスハイライトプレビュー（エディタ下部に表示）
-        self._dsl_highlight = ft.Container(visible=False)
         self._prev_editor_value = _DEFAULT_DSL
 
         # ── タブバー ──────────────────────────────────────────
         self._tab_bar = ft.Row(spacing=2, scroll=ft.ScrollMode.AUTO)
+
+        # Stack でハイライト層の上にTextFieldを重ねる
+        editor_stack = ft.Stack(
+            [self._dsl_highlight_layer, self._editor],
+            expand=True,
+        )
 
         self._editor_panel = ft.Container(
             content=ft.Column([
@@ -238,7 +253,7 @@ class EditorView:
                     content=self._tab_bar,
                     padding=ft.padding.only(left=4, bottom=0),
                 ),
-                self._editor,
+                editor_stack,
             ], spacing=0, expand=True),
             expand=2,
             border_radius=16,
@@ -577,10 +592,13 @@ class EditorView:
         self._page.on_keyboard_event = _on_keyboard
 
     def _on_editor_change(self, e: ft.ControlEvent) -> None:
-        """改行時に自動インデント: 前の行が `:` で終わっていれば2スペース追加。"""
+        """改行時に自動インデント + DSLシンタックスハイライト更新。"""
         val = self._editor.value or ""
         prev = self._prev_editor_value or ""
         self._prev_editor_value = val
+
+        # ハイライト更新
+        self._dsl_highlight_text.spans = _highlight_dsl(val)
 
         # 改行が追加されたか検出（文字数が1増えて末尾が改行）
         if len(val) != len(prev) + 1 or not val.endswith("\n"):
@@ -666,6 +684,7 @@ class EditorView:
         self._active_tab = tab
         self._editor.value = tab.dsl_text
         self._prev_editor_value = tab.dsl_text
+        self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
         compiled = tab.compiled
         if compiled:
             self._set_preview(compiled.get("code", ""))
@@ -680,6 +699,7 @@ class EditorView:
         self._tabs.append(tab)
         self._active_tab = tab
         self._editor.value = ""
+        self._dsl_highlight_text.spans = _highlight_dsl("")
         self._set_preview("# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
         self._page.update()
@@ -693,6 +713,7 @@ class EditorView:
             new_idx = min(idx, len(self._tabs) - 1)
             self._active_tab = self._tabs[new_idx]
             self._editor.value = self._active_tab.dsl_text
+            self._dsl_highlight_text.spans = _highlight_dsl(self._active_tab.dsl_text)
             compiled = self._active_tab.compiled
             self._set_preview(compiled.get("code", "") if compiled else "# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
@@ -862,6 +883,7 @@ class EditorView:
         self._editor.value = current + code
         self._active_tab.dsl_text = self._editor.value
         self._prev_editor_value = self._editor.value
+        self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
         self._log(f"チャットからDSLを挿入しました", COLORS["green"])
         self._page.update()
 
@@ -878,6 +900,8 @@ class EditorView:
         if current and not current.endswith("\n"):
             current += "\n"
         self._editor.value = current + snippet
+        self._active_tab.dsl_text = self._editor.value
+        self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
         self._page.update()
 
     def _show_reference(self, e: ft.ControlEvent) -> None:
@@ -1093,6 +1117,7 @@ class EditorView:
         self._tabs.append(tab)
         self._active_tab = tab
         self._editor.value = tab.dsl_text
+        self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
         self._set_preview(script.get("compiled_python", "# (empty)"))
         self._rebuild_tab_bar()
         self._log(f"{name} を開きました", COLORS["blue"])
