@@ -846,7 +846,7 @@ class HomeView:
                 content=ft.Row([
                     ft.Container(
                         content=ft.Markdown(
-                            display, selectable=True,
+                            display, selectable=False,
                             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
                             md_style_sheet=ft.MarkdownStyleSheet(
                                 p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
@@ -934,6 +934,7 @@ class HomeView:
     def _go_machine_with_context(self, entry: dict | None) -> None:
         """提案の文脈をダリーチャットに渡して遷移する。"""
         if not entry:
+            # 提案が選択されていない場合はダリー画面に遷移だけ
             if self._on_navigate:
                 self._on_navigate(4)
             return
@@ -941,10 +942,18 @@ class HomeView:
         content = self._strip_meta(entry.get("content", ""))
         message = f"この提案について詳しく教えて: 「{content}」"
 
+        # 先にダリー画面に遷移
         if self._on_navigate:
             self._on_navigate(4)
+
+        # 遷移後にメッセージを送信（少し遅延させてUIの描画完了を待つ）
         if self._on_ask_darii:
-            self._on_ask_darii(message)
+            import threading
+            def _send_delayed():
+                import time
+                time.sleep(0.3)
+                self._on_ask_darii(message)
+            threading.Thread(target=_send_delayed, daemon=True).start()
 
     # ==================================================================
     # Widget: Gmail
