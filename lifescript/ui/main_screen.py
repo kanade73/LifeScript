@@ -21,6 +21,146 @@ from ..database.client import db_client
 from ..exceptions import CompileError
 from .app import COLORS
 
+# ── コードフォント（VS Code風フォールバックチェーン）──────────────
+_CODE_FONT = "JetBrains Mono, Fira Code, Cascadia Code, Consolas, SF Mono, monospace"
+
+# ── Python シンタックスハイライト色 ──────────────────────────────
+_SH = {
+    "keyword":  "#C586C0",   # purple-pink (if, def, return, import, ...)
+    "builtin":  "#DCDCAA",   # yellow (print, len, range, ...)
+    "string":   "#CE9178",   # warm orange (strings)
+    "number":   "#B5CEA8",   # light green (numbers)
+    "comment":  "#6A9955",   # green (comments)
+    "function": "#DCDCAA",   # yellow (function names after def)
+    "class":    "#4EC9B0",   # teal (class names)
+    "decorator":"#D7BA7D",   # gold (@decorators)
+    "operator": "#D4D4D4",   # light gray (=, +, -, etc.)
+    "default":  "#D4D4D4",   # light gray (default)
+}
+
+_PY_KEYWORDS = {
+    "False", "None", "True", "and", "as", "assert", "async", "await",
+    "break", "class", "continue", "def", "del", "elif", "else", "except",
+    "finally", "for", "from", "global", "if", "import", "in", "is",
+    "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+    "try", "while", "with", "yield",
+}
+_PY_BUILTINS = {
+    "print", "len", "range", "int", "str", "float", "list", "dict",
+    "set", "tuple", "bool", "type", "isinstance", "enumerate", "zip",
+    "map", "filter", "sorted", "reversed", "abs", "min", "max", "sum",
+    "any", "all", "open", "input", "super", "property", "staticmethod",
+    "classmethod", "hasattr", "getattr", "setattr", "Exception",
+}
+
+# ── DSL シンタックスハイライト色 ──────────────────────────────────
+_DSL_SH = {
+    "keyword":   "#C586C0",   # when, every, if, else, repeat
+    "function":  "#DCDCAA",   # notify, calendar.*, web.*, widget.*, gmail.*
+    "string":    "#CE9178",   # 文字列
+    "number":    "#B5CEA8",   # 数値
+    "comment":   "#6A9955",   # コメント
+    "traits":    "#569CD6",   # traits: ブロック
+    "operator":  "#D4D4D4",   # ==, >=, <=, etc.
+    "default":   "#D4D4D4",   # デフォルト
+}
+
+_DSL_KEYWORDS = {"when", "every", "if", "else", "repeat", "let", "and", "or", "not"}
+_DSL_FUNCTIONS = {
+    "notify", "calendar", "web", "widget", "gmail", "streak", "machine",
+    "fetch", "add", "read", "suggest", "show", "send", "search",
+    "summarize", "unread", "count",
+}
+
+
+def _highlight_python(code: str) -> list[ft.TextSpan]:
+    """Python コードを簡易シンタックスハイライトして TextSpan リストを返す。"""
+    import re as _re
+    spans: list[ft.TextSpan] = []
+
+    # トークン化パターン（順序が重要）
+    token_pattern = _re.compile(
+        r'(#[^\n]*)'             # コメント
+        r'|(@\w+)'              # デコレータ
+        r'|("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')'  # 三重引用符文字列
+        r'|("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')'  # 通常文字列
+        r'|(\b\d+(?:\.\d+)?\b)'  # 数値
+        r'|(\b\w+\b)'           # 単語
+        r'|([^\w\s])'           # 記号
+        r'|(\s+)'              # 空白
+    )
+
+    for m in token_pattern.finditer(code):
+        comment, decorator, triple_str, string, number, word, symbol, space = m.groups()
+        if comment:
+            spans.append(ft.TextSpan(comment, style=ft.TextStyle(color=_SH["comment"], font_family=_CODE_FONT)))
+        elif decorator:
+            spans.append(ft.TextSpan(decorator, style=ft.TextStyle(color=_SH["decorator"], font_family=_CODE_FONT)))
+        elif triple_str:
+            spans.append(ft.TextSpan(triple_str, style=ft.TextStyle(color=_SH["string"], font_family=_CODE_FONT)))
+        elif string:
+            spans.append(ft.TextSpan(string, style=ft.TextStyle(color=_SH["string"], font_family=_CODE_FONT)))
+        elif number:
+            spans.append(ft.TextSpan(number, style=ft.TextStyle(color=_SH["number"], font_family=_CODE_FONT)))
+        elif word:
+            if word in _PY_KEYWORDS:
+                color = _SH["keyword"]
+            elif word in _PY_BUILTINS:
+                color = _SH["builtin"]
+            else:
+                color = _SH["default"]
+            spans.append(ft.TextSpan(word, style=ft.TextStyle(color=color, font_family=_CODE_FONT)))
+        elif symbol:
+            spans.append(ft.TextSpan(symbol, style=ft.TextStyle(color=_SH["operator"], font_family=_CODE_FONT)))
+        elif space:
+            spans.append(ft.TextSpan(space, style=ft.TextStyle(color=_SH["default"], font_family=_CODE_FONT)))
+
+    return spans
+
+
+def _highlight_dsl(code: str) -> list[ft.TextSpan]:
+    """LifeScript DSL を簡易シンタックスハイライトして TextSpan リストを返す。"""
+    import re as _re
+    spans: list[ft.TextSpan] = []
+
+    token_pattern = _re.compile(
+        r'(#[^\n]*)'             # コメント
+        r'|("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')'  # 文字列
+        r'|(\b\d+(?:\.\d+)?\b)'  # 数値
+        r'|(traits\s*:)'         # traits: ブロック
+        r'|(\b\w+\b)'           # 単語
+        r'|([><=!]+|[+\-*/.])'  # 演算子・ドット
+        r'|(\s+)'              # 空白
+        r'|([^\w\s])'           # その他記号
+    )
+
+    for m in token_pattern.finditer(code):
+        comment, string, number, traits, word, operator, space, other = m.groups()
+        if comment:
+            spans.append(ft.TextSpan(comment, style=ft.TextStyle(color=_DSL_SH["comment"], font_family=_CODE_FONT)))
+        elif string:
+            spans.append(ft.TextSpan(string, style=ft.TextStyle(color=_DSL_SH["string"], font_family=_CODE_FONT)))
+        elif number:
+            spans.append(ft.TextSpan(number, style=ft.TextStyle(color=_DSL_SH["number"], font_family=_CODE_FONT)))
+        elif traits:
+            spans.append(ft.TextSpan(traits, style=ft.TextStyle(color=_DSL_SH["traits"], font_family=_CODE_FONT, weight=ft.FontWeight.W_700)))
+        elif word:
+            if word in _DSL_KEYWORDS:
+                color = _DSL_SH["keyword"]
+            elif word in _DSL_FUNCTIONS:
+                color = _DSL_SH["function"]
+            else:
+                color = _DSL_SH["default"]
+            spans.append(ft.TextSpan(word, style=ft.TextStyle(color=color, font_family=_CODE_FONT)))
+        elif operator:
+            spans.append(ft.TextSpan(operator, style=ft.TextStyle(color=_DSL_SH["operator"], font_family=_CODE_FONT)))
+        elif space:
+            spans.append(ft.TextSpan(space, style=ft.TextStyle(color=_DSL_SH["default"], font_family=_CODE_FONT)))
+        elif other:
+            spans.append(ft.TextSpan(other, style=ft.TextStyle(color=_DSL_SH["operator"], font_family=_CODE_FONT)))
+
+    return spans
+
 _DEFAULT_DSL = """\
 # === オートメーション（Save & Registerで定期実行） ===
 # 例: バイトが週4以上なら回復タイムを提案
@@ -72,7 +212,7 @@ class EditorView:
             min_lines=16,
             expand=True,
             text_style=ft.TextStyle(
-                font_family="Courier New, monospace",
+                font_family=_CODE_FONT,
                 size=13, color=COLORS["editor_fg"],
             ),
             bgcolor=COLORS["editor_bg"],
@@ -85,6 +225,8 @@ class EditorView:
             content_padding=ft.padding.all(16),
             on_change=self._on_editor_change,
         )
+        # DSLシンタックスハイライトプレビュー（エディタ下部に表示）
+        self._dsl_highlight = ft.Container(visible=False)
         self._prev_editor_value = _DEFAULT_DSL
 
         # ── タブバー ──────────────────────────────────────────
@@ -104,21 +246,20 @@ class EditorView:
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-        # ── Python preview ────────────────────────────────────
-        self._python_preview = ft.TextField(
-            value="# コンパイル結果がここに表示されます",
-            multiline=True,
-            min_lines=16,
+        # ── Python preview (シンタックスハイライト付き) ─────────
+        self._python_raw = "# コンパイル結果がここに表示されます"
+        self._python_preview_text = ft.Text(
+            spans=_highlight_python(self._python_raw),
+            size=12,
+            selectable=True,
+        )
+        self._python_preview_container = ft.Container(
+            content=ft.Column([self._python_preview_text],
+                              scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
-            read_only=True,
-            text_style=ft.TextStyle(
-                font_family="Courier New, monospace",
-                size=12, color="#A8D8A8",
-            ),
             bgcolor="#1E1C19",
-            border_color=ft.Colors.TRANSPARENT,
             border_radius=12,
-            content_padding=ft.padding.all(16),
+            padding=ft.padding.all(16),
         )
 
         preview_panel = ft.Container(
@@ -138,7 +279,7 @@ class EditorView:
                     ], spacing=2),
                     padding=ft.padding.only(left=4, bottom=0),
                 ),
-                self._python_preview,
+                self._python_preview_container,
             ], spacing=0, expand=True),
             expand=1,
             border_radius=16,
@@ -254,7 +395,7 @@ class EditorView:
                 ft.Container(
                     content=ft.Column([
                         ft.Text(f["name"], size=12, weight=ft.FontWeight.W_600, color=COLORS["blue"]),
-                        ft.Text(f["signature"], size=10, color=COLORS["mid_text"], font_family="Courier New"),
+                        ft.Text(f["signature"], size=10, color=COLORS["mid_text"], font_family=_CODE_FONT),
                         ft.Text(f["description"], size=10, color=COLORS["light_text"]),
                     ], spacing=2),
                     padding=ft.padding.only(bottom=8),
@@ -527,9 +668,9 @@ class EditorView:
         self._prev_editor_value = tab.dsl_text
         compiled = tab.compiled
         if compiled:
-            self._python_preview.value = compiled.get("code", "")
+            self._set_preview(compiled.get("code", ""))
         else:
-            self._python_preview.value = "# コンパイル結果がここに表示されます"
+            self._set_preview("# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
         self._page.update()
 
@@ -539,7 +680,7 @@ class EditorView:
         self._tabs.append(tab)
         self._active_tab = tab
         self._editor.value = ""
-        self._python_preview.value = "# コンパイル結果がここに表示されます"
+        self._set_preview("# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
         self._page.update()
 
@@ -553,7 +694,7 @@ class EditorView:
             self._active_tab = self._tabs[new_idx]
             self._editor.value = self._active_tab.dsl_text
             compiled = self._active_tab.compiled
-            self._python_preview.value = compiled.get("code", "") if compiled else "# コンパイル結果がここに表示されます"
+            self._set_preview(compiled.get("code", "") if compiled else "# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
         self._page.update()
 
@@ -673,7 +814,7 @@ class EditorView:
                         ft.Container(
                             content=ft.Text(
                                 code, size=12, color=COLORS["editor_fg"],
-                                font_family="Courier New, monospace",
+                                font_family=_CODE_FONT,
                                 selectable=True,
                             ),
                             bgcolor=COLORS["editor_bg"],
@@ -727,6 +868,11 @@ class EditorView:
     # ==================================================================
     # Helpers
     # ==================================================================
+    def _set_preview(self, code: str) -> None:
+        """Python プレビューをシンタックスハイライト付きで更新する。"""
+        self._python_raw = code
+        self._python_preview_text.spans = _highlight_python(code)
+
     def _insert_snippet(self, snippet: str) -> None:
         current = self._editor.value or ""
         if current and not current.endswith("\n"):
@@ -757,7 +903,7 @@ class EditorView:
                 level = "INFO"
             color = COLORS["coral"] if level == "ERROR" else (COLORS["yellow"] if level == "WARN" else COLORS["green"])
             self._log_list.controls.append(
-                ft.Text(text, color=color, size=11, font_family="Courier New, monospace", selectable=True)
+                ft.Text(text, color=color, size=11, font_family=_CODE_FONT, selectable=True)
             )
         if len(self._log_list.controls) > 300:
             self._log_list.controls = self._log_list.controls[-300:]
@@ -765,7 +911,7 @@ class EditorView:
 
     def _log(self, msg: str, color: str) -> None:
         self._log_list.controls.append(
-            ft.Text(msg, color=color, size=11, font_family="Courier New, monospace", selectable=True)
+            ft.Text(msg, color=color, size=11, font_family=_CODE_FONT, selectable=True)
         )
         if len(self._log_list.controls) > 300:
             self._log_list.controls = self._log_list.controls[-300:]
@@ -834,7 +980,7 @@ class EditorView:
         try:
             result = self._compiler.compile(code)
             self._active_tab.compiled = result
-            self._python_preview.value = result["code"]
+            self._set_preview(result["code"])
             self._log(f'コンパイル完了: "{result["title"]}"', COLORS["green"])
             trigger = result.get("trigger", {})
             tt = trigger.get("type", "interval")
@@ -847,7 +993,7 @@ class EditorView:
             self._page.update()
         except CompileError as e:
             self._log(f"コンパイルエラー: {e}", COLORS["coral"])
-            self._python_preview.value = f"# エラー: {e}"
+            self._set_preview(f"# エラー: {e}")
             self._page.update()
 
     def _on_run(self, e: ft.ControlEvent) -> None:
@@ -874,14 +1020,14 @@ class EditorView:
         python_code = result["code"]
 
         self._log("実行中…", COLORS["blue"])
-        self._python_preview.value = "# 実行中…"
+        self._set_preview("# 実行中…")
         self._page.update()
         try:
             output = run_sandboxed(python_code, timeout=30, capture=True)
-            self._python_preview.value = f"# 実行結果\n# {'=' * 40}\n\n{output or '(出力なし)'}"
+            self._set_preview(f"# 実行結果\n# {'=' * 40}\n\n{output or '(出力なし)'}")
             self._log("実行完了", COLORS["green"])
         except SandboxError as e:
-            self._python_preview.value = f"# 実行エラー\n# {'=' * 40}\n\n{e}"
+            self._set_preview(f"# 実行エラー\n# {'=' * 40}\n\n{e}")
             self._log(f"実行エラー: {e}", COLORS["coral"])
         self._page.update()
 
@@ -947,7 +1093,7 @@ class EditorView:
         self._tabs.append(tab)
         self._active_tab = tab
         self._editor.value = tab.dsl_text
-        self._python_preview.value = script.get("compiled_python", "# (empty)")
+        self._set_preview(script.get("compiled_python", "# (empty)"))
         self._rebuild_tab_bar()
         self._log(f"{name} を開きました", COLORS["blue"])
         self._page.update()
