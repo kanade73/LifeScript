@@ -18,11 +18,13 @@ class SettingsView:
         self._page = page
 
     def build(self) -> ft.Control:
+        google_section = self._section_google()
+        self._google_section_container = google_section
         return ft.Column([
             self._header(),
             ft.Container(
                 content=ft.Column([
-                    self._section_google(),
+                    google_section,
                     ft.Container(height=16),
                     self._section_about(),
                 ], spacing=0, scroll=ft.ScrollMode.AUTO),
@@ -213,14 +215,24 @@ class SettingsView:
                 btn.bgcolor = GREEN
                 btn.icon = ft.Icons.CHECK_ROUNDED
             else:
-                btn.text = "認証に失敗しました"
+                btn.text = "認証に失敗しました — もう一度お試しください"
                 btn.bgcolor = CORAL
-            btn.disabled = False
+                btn.disabled = False
+            # Google連携セクションを最新状態で再描画
+            self._rebuild_google_section()
             self._page.update()
 
         google_auth.authenticate(on_complete=_on_complete)
 
     def _on_revoke_google(self, e: ft.ControlEvent) -> None:
         google_auth.revoke()
-        # ページをリビルド
+        self._rebuild_google_section()
         self._page.update()
+
+    def _rebuild_google_section(self) -> None:
+        """Google連携セクションを最新の認証状態で再構築する。"""
+        if hasattr(self, "_google_section_container"):
+            new_section = self._section_google()
+            self._google_section_container.content = new_section.content
+            self._google_section_container.bgcolor = new_section.bgcolor
+            self._google_section_container.border = new_section.border

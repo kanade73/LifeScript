@@ -30,12 +30,24 @@ def is_configured() -> bool:
 
 
 def is_authenticated() -> bool:
-    """有効なトークンが存在するか。"""
+    """有効なトークンが存在するか（期限切れはリフレッシュを試みる）。"""
     if not _TOKEN_FILE.exists():
         return False
     try:
         creds = _load_credentials()
-        return creds is not None and creds.valid
+        if creds is None:
+            return False
+        if creds.valid:
+            return True
+        # 期限切れだがrefresh_tokenがあればリフレッシュ
+        if creds.expired and creds.refresh_token:
+            import google.auth.transport.requests
+            request = google.auth.transport.requests.Request()
+            creds.refresh(request)
+            email = get_user_email()
+            _save_credentials(creds, email)
+            return creds.valid
+        return False
     except Exception:
         return False
 
@@ -68,7 +80,18 @@ def authenticate(on_complete: callable | None = None) -> None:
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(_CLIENT_SECRETS_FILE), SCOPES
             )
-            creds = flow.run_local_server(port=8090, open_browser=True)
+            # success_message でブラウザに「閉じてOK」と表示
+            creds = flow.run_local_server(
+                port=8090,
+                open_browser=True,
+                success_message="認証が完了しました！このタブを閉じてアプリに戻ってください。",
+            )
+
+            if creds is None:
+                print("Google OAuth: credentials is None after flow")
+                if on_complete:
+                    on_complete(False, None)
+                return
 
             # メールアドレスを取得
             email = _fetch_email(creds)
@@ -76,10 +99,13 @@ def authenticate(on_complete: callable | None = None) -> None:
             # トークン保存
             _save_credentials(creds, email)
 
+            print(f"Google OAuth success: {email}, token saved to {_TOKEN_FILE}")
             if on_complete:
                 on_complete(True, email)
         except Exception as e:
+            import traceback
             print(f"Google OAuth error: {e}")
+            traceback.print_exc()
             if on_complete:
                 on_complete(False, None)
 
