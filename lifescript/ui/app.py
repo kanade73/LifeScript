@@ -172,12 +172,17 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 scheduler.start()
                 scheduler.load_from_db()
 
+            concierge_view = ConciergeView(page=page, model=compiler.model)
+
+            def _ask_darii(message: str) -> None:
+                concierge_view.send_prefilled(message)
+
             home_view = HomeView(page=page, scheduler=scheduler,
-                                on_navigate=lambda idx: _on_nav(idx))
+                                on_navigate=lambda idx: _on_nav(idx),
+                                on_ask_darii=_ask_darii)
             editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
             dashboard_view = DashboardView(page=page, scheduler=scheduler)
             reference_view = ReferenceView(page=page)
-            concierge_view = ConciergeView(page=page, model=compiler.model)
             settings_view = SettingsView(page=page)
 
             views = [home_view, editor_view, dashboard_view, reference_view, concierge_view, settings_view]

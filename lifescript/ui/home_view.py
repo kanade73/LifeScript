@@ -38,10 +38,12 @@ class HomeView:
     ]
 
     def __init__(self, page: ft.Page, scheduler: LifeScriptScheduler,
-                 on_navigate: callable | None = None) -> None:
+                 on_navigate: callable | None = None,
+                 on_ask_darii: callable | None = None) -> None:
         self._page = page
         self._scheduler = scheduler
         self._on_navigate = on_navigate  # on_navigate(index) で画面遷移
+        self._on_ask_darii = on_ask_darii  # on_ask_darii(message) でダリーに質問
         self._logs: list[tuple[str, str, str]] = []
         self._cal_year = datetime.now().year
         self._cal_month = datetime.now().month
@@ -930,9 +932,19 @@ class HomeView:
         )
 
     def _go_machine_with_context(self, entry: dict | None) -> None:
-        """提案の文脈をMachine画面に渡して遷移する。"""
+        """提案の文脈をダリーチャットに渡して遷移する。"""
+        if not entry:
+            if self._on_navigate:
+                self._on_navigate(4)
+            return
+
+        content = self._strip_meta(entry.get("content", ""))
+        message = f"この提案について詳しく教えて: 「{content}」"
+
         if self._on_navigate:
             self._on_navigate(4)
+        if self._on_ask_darii:
+            self._on_ask_darii(message)
 
     # ==================================================================
     # Widget: Gmail

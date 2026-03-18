@@ -396,6 +396,30 @@ class ConciergeView:
         self._chat_messages.controls.append(self._welcome_bubble())
         self._page.update()
 
+    def send_prefilled(self, message: str) -> None:
+        """外部から初期メッセージを送信する（提案連携用）。"""
+        self._chat_messages.controls.append(self._user_bubble(message))
+        loading = self._loading_bubble()
+        self._chat_messages.controls.append(loading)
+        self._page.update()
+
+        def _call() -> None:
+            try:
+                reply, actions = self._chat_engine.send(message)
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                for action in actions:
+                    self._chat_messages.controls.append(self._action_bubble(action))
+                self._chat_messages.controls.append(self._assistant_bubble(reply))
+            except Exception as ex:
+                if loading in self._chat_messages.controls:
+                    self._chat_messages.controls.remove(loading)
+                self._chat_messages.controls.append(self._error_bubble(str(ex)))
+            self._page.update()
+
+        import threading
+        threading.Thread(target=_call, daemon=True).start()
+
     # ------------------------------------------------------------------
     # Bubble builders
     # ------------------------------------------------------------------
