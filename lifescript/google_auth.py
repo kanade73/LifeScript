@@ -12,6 +12,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
+# Google が openid スコープを勝手に追加して返すため、スコープ変更を許容する
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
 _CREDENTIALS_DIR = Path.home() / ".lifescript"
 _CLIENT_SECRETS_FILE = _CREDENTIALS_DIR / "google_credentials.json"
 _TOKEN_FILE = _CREDENTIALS_DIR / "google_token.json"
