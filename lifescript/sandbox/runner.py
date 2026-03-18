@@ -49,7 +49,10 @@ def _build_globals() -> dict:
     globs = dict(safe_globals)
     globs["__builtins__"] = restricted_builtins
     globs["_getiter_"] = iter
+    globs["_getitem_"] = lambda obj, key: obj[key]
     globs["_getattr_"] = getattr
+    globs["_write_"] = lambda obj: obj  # dict/listへの書き込みを許可
+    globs["_inplacevar_"] = lambda op, x, y: op(x, y)  # +=, -= 等を許可
     globs["_iter_unpack_sequence_"] = guarded_iter_unpack_sequence
     globs["_print_"] = PrintCollector
     return globs
