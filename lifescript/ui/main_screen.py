@@ -472,6 +472,107 @@ class EditorView:
             )
 
         # ── Action toolbar ────────────────────────────────────
+        self._snippet_expanded = False
+        self._ignore_next_global_tap = False
+        self._snippet_buttons_column = ft.Column([
+            ft.OutlinedButton(
+                "every", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["yellow"]),
+                    color=COLORS["yellow"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('every :\n  notify("")'),
+            ),
+            ft.OutlinedButton(
+                "when", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["green"]),
+                    color=COLORS["green"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('when calendar.read("").count_this_week >= 0:\n  '),
+            ),
+            ft.OutlinedButton(
+                "notify", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["coral"]),
+                    color=COLORS["coral"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('notify("")'),
+            ),
+            ft.OutlinedButton(
+                "calendar", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["blue"]),
+                    color=COLORS["blue"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('calendar.add("", start="")'),
+            ),
+            ft.OutlinedButton(
+                "web", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["purple"]),
+                    color=COLORS["purple"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('result = web.fetch("https://")\nwidget.show("", result)'),
+            ),
+            ft.OutlinedButton(
+                "traits", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    side=ft.BorderSide(1, COLORS["orange"]),
+                    color=COLORS["orange"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('traits:\n  '),
+            ),
+        ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.END)
+
+        self._snippet_popover = ft.Container(
+            content=self._snippet_buttons_column,
+            visible=self._snippet_expanded,
+            bgcolor=COLORS["card_bg"],
+            border=ft.border.all(1, _BORDER),
+            border_radius=12,
+            padding=10,
+            right=0,
+            bottom=52,
+            shadow=ft.BoxShadow(
+                blur_radius=12,
+                color="#22000000",
+                offset=ft.Offset(0, 4),
+            ),
+        )
+
+        self._snippet_toggle_button = ft.OutlinedButton(
+            "Functions",
+            icon=ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=10),
+                side=ft.BorderSide(1, COLORS["mid_text"]),
+                color=COLORS["mid_text"],
+                padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            ),
+            on_click=self._toggle_snippets,
+        )
+
+        self._snippet_anchor = ft.Stack(
+            controls=[
+                self._snippet_popover,
+                ft.Container(
+                    content=self._snippet_toggle_button,
+                    right=0,
+                    bottom=0,
+                ),
+            ],
+            width=260,
+            height=44,
+            clip_behavior=ft.ClipBehavior.NONE,
+        )
+
         action_bar = ft.Container(
             content=ft.Row([
                 ft.ElevatedButton(
@@ -523,52 +624,7 @@ class EditorView:
                     on_click=self._on_stop_all,
                 ),
                 ft.Container(expand=True),
-                # Snippet buttons
-                ft.OutlinedButton(
-                    "when", style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=10),
-                        side=ft.BorderSide(1, COLORS["green"]),
-                        color=COLORS["green"],
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: self._insert_snippet('when calendar.read("").count_this_week >= 0:\n  '),
-                ),
-                ft.OutlinedButton(
-                    "notify", style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=10),
-                        side=ft.BorderSide(1, COLORS["coral"]),
-                        color=COLORS["coral"],
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: self._insert_snippet('notify("")'),
-                ),
-                ft.OutlinedButton(
-                    "calendar", style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=10),
-                        side=ft.BorderSide(1, COLORS["blue"]),
-                        color=COLORS["blue"],
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: self._insert_snippet('calendar.add("", start="")'),
-                ),
-                ft.OutlinedButton(
-                    "web", style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=10),
-                        side=ft.BorderSide(1, COLORS["purple"]),
-                        color=COLORS["purple"],
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: self._insert_snippet('result = web.fetch("https://")\nwidget.show("", result)'),
-                ),
-                ft.OutlinedButton(
-                    "traits", style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=10),
-                        side=ft.BorderSide(1, COLORS["orange"]),
-                        color=COLORS["orange"],
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: self._insert_snippet('traits:\n  '),
-                ),
+                self._snippet_anchor,
             ], spacing=10),
             padding=ft.padding.symmetric(vertical=4),
         )
@@ -611,12 +667,17 @@ class EditorView:
             log_panel,
         ], expand=True, spacing=10)
 
+        self._root = ft.GestureDetector(
+            content=self._content,
+            on_tap=self._on_global_tap,
+        )
+
         self._rebuild_tab_bar()
         self._load_scripts_list()
 
     def build(self) -> ft.Column:
         self._setup_tab_key()
-        return self._content
+        return self._root
 
     # ==================================================================
     # テンプレートギャラリー
@@ -1098,6 +1159,33 @@ class EditorView:
         """Python プレビューをシンタックスハイライト付きで更新する。"""
         self._python_raw = code
         self._python_preview_text.spans = _highlight_python(code)
+
+    def _toggle_snippets(self, e: ft.ControlEvent) -> None:
+        """Snippet buttons の表示を切り替える。"""
+        # トグルボタン自身のタップで直後に閉じないよう1回だけ無視する
+        self._ignore_next_global_tap = True
+        self._snippet_expanded = not self._snippet_expanded
+        self._snippet_popover.visible = self._snippet_expanded
+        self._snippet_toggle_button.text = "Snippets" if not self._snippet_expanded else "Snippets (close)"
+        self._snippet_toggle_button.icon = (
+            ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
+            if not self._snippet_expanded
+            else ft.Icons.KEYBOARD_ARROW_UP_ROUNDED
+        )
+        self._page.update()
+
+    def _on_global_tap(self, e: ft.ControlEvent) -> None:
+        """画面の任意タップで、展開中の Snippet パネルを閉じる。"""
+        if self._ignore_next_global_tap:
+            self._ignore_next_global_tap = False
+            return
+        if not self._snippet_expanded:
+            return
+        self._snippet_expanded = False
+        self._snippet_popover.visible = False
+        self._snippet_toggle_button.text = "Snippets"
+        self._snippet_toggle_button.icon = ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
+        self._page.update()
 
     def _insert_snippet(self, snippet: str) -> None:
         current = self._editor.value or ""
