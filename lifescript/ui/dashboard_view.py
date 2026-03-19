@@ -74,8 +74,29 @@ class DashboardView:
 
         machine_logs_section = ft.Container(
             content=ft.Column([
-                ft.Text("ダリーログ", size=14, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
+                ft.Row([
+                    ft.Icon(ft.Icons.RECEIPT_LONG_ROUNDED, size=18, color=COLORS["purple"]),
+                    ft.Text("ダリーログ", size=14, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
+                ], spacing=6),
                 self._machine_logs_list,
+            ], spacing=8, expand=True),
+            expand=True,
+            bgcolor=COLORS["card_bg"],
+            border_radius=16,
+            padding=14,
+            shadow=CARD_SHADOW,
+        )
+
+        # ── Function Ranking ─────────────────────────────────
+        self._function_ranking_list = ft.ListView(expand=True, spacing=4, padding=4)
+
+        function_ranking_section = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.LEADERBOARD_ROUNDED, size=18, color=COLORS["orange"]),
+                    ft.Text("よく使われている関数", size=14, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
+                ], spacing=6),
+                self._function_ranking_list,
             ], spacing=8, expand=True),
             expand=True,
             bgcolor=COLORS["card_bg"],
@@ -132,7 +153,7 @@ class DashboardView:
             ft.Text("Dashboard", size=22, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
             status_row,
             graph_row,
-            ft.Row([automation_section, machine_logs_section], expand=True, spacing=12),
+            ft.Row([automation_section, machine_logs_section, function_ranking_section], expand=True, spacing=12),
             log_panel,
         ], expand=True, spacing=16)
 
@@ -629,14 +650,98 @@ class DashboardView:
         except Exception:
             pass
 
+    def _refresh_function_ranking(self) -> None:
+        self._function_ranking_list.controls.clear()
+        try:
+            # 最新のログ（最大1000件）を取得して集計
+            logs = db_client.get_machine_logs(limit=1000)
+            func_counts: dict[str, int] = {}
+
+            for entry in logs:
+                action = entry.get("action_type", "")
+                content = entry.get("content", "")
+
+                # action_typeからの抽出
+                if action == "notify" or action == "notify_scheduled":
+                    func_counts["notify()"] = func_counts.get("notify()", 0) + 1
+                elif action == "calendar_suggest":
+                    func_counts["calendar.suggest()"] = func_counts.get("calendar.suggest()", 0) + 1
+                elif action.startswith("widget:"):
+                    func_counts["widget.show()"] = func_counts.get("widget.show()", 0) + 1
+                elif action == "reminder":
+                    func_counts["calendar.add()"] = func_counts.get("calendar.add()", 0) + 1
+                elif action == "memory":
+                    func_counts["memory.write()"] = func_counts.get("memory.write()", 0) + 1
+                elif action == "memory_auto":
+                    func_counts["machine.analyze()"] = func_counts.get("machine.analyze()", 0) + 1
+
+                # contentからのキーワードベース抽出（簡易的）
+                import re as _re
+                for func_match in _re.finditer(r"([a-z_]+(?:\.[a-z_]+)?)\(", content):
+                    name = func_match.group(1) + "()"
+                    # 一般的なPython組み込み関数などを除外
+                    if name not in ("print()", "len()", "range()", "str()", "int()"):
+                        func_counts[name] = func_counts.get(name, 0) + 1
+
+            if not func_counts:
+                self._function_ranking_list.controls.append(
+                    ft.Container(
+                        content=ft.Text("データ不足", size=12, color=COLORS["light_text"], italic=True),
+                        padding=8,
+                    )
+                )
+                self._page.update()
+                return
+
+            # 上位5件をソートして表示
+            sorted_funcs = sorted(func_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            
+            medals = ["🥇", "🥈", "🥉", "４位", "５位"]
+            colors = [COLORS["yellow"], "#C0C0C0", "#CD7F32", COLORS["mid_text"], COLORS["mid_text"]]
+
+            for i, (func_name, count) in enumerate(sorted_funcs):
+                self._function_ranking_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Container(
+                                content=ft.Text(medals[i] if i < 3 else f" {i+1} ", size=14 if i < 3 else 12),
+                                width=24, alignment=ft.Alignment(0, 0)
+                            ),
+                            ft.Text(func_name, size=13, weight=ft.FontWeight.W_700,
+                                    color=COLORS["blue"], font_family="monospace"),
+                            ft.Container(expand=True),
+                            ft.Container(
+                                content=ft.Text(f"{count} 回", size=11, color=COLORS["dark_text"], weight=ft.FontWeight.W_600),
+                                bgcolor=f"{colors[i]}33",
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                border_radius=10,
+                            )
+                        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        bgcolor=COLORS["bg"],
+                        border_radius=12,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        shadow=SHADOW_SOFT,
+                    )
+                )
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # Periodic refresh
     # ------------------------------------------------------------------
+    def _refresh_all(self) -> None:
+        self._refresh_status()
+        self._refresh_graphs()
+        self._refresh_automations()
+        self._refresh_machine_logs()
+        self._refresh_function_ranking()
+
     def _start_refresh_timer(self) -> None:
         def refresh() -> None:
             self._refresh_status()
             self._refresh_graphs()
             self._refresh_machine_logs()
+            self._refresh_function_ranking()
             try:
                 self._page.update()
             except Exception:

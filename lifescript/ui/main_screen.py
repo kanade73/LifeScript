@@ -24,18 +24,18 @@ from .app import COLORS, CARD_SHADOW, SHADOW_SOFT
 # ── コードフォント（VS Code風フォールバックチェーン）──────────────
 _CODE_FONT = "JetBrains Mono, Fira Code, Cascadia Code, Consolas, SF Mono, monospace"
 
-# ── Python シンタックスハイライト色 ──────────────────────────────
+# ── Python シンタックスハイライト色（ウォームベージュ暗め背景向け）──
 _SH = {
-    "keyword":  "#C586C0",   # purple-pink (if, def, return, import, ...)
-    "builtin":  "#DCDCAA",   # yellow (print, len, range, ...)
-    "string":   "#CE9178",   # warm orange (strings)
-    "number":   "#B5CEA8",   # light green (numbers)
-    "comment":  "#6A9955",   # green (comments)
-    "function": "#DCDCAA",   # yellow (function names after def)
-    "class":    "#4EC9B0",   # teal (class names)
-    "decorator":"#D7BA7D",   # gold (@decorators)
-    "operator": "#D4D4D4",   # light gray (=, +, -, etc.)
-    "default":  "#D4D4D4",   # light gray (default)
+    "keyword":  "#D19AD8",   # soft purple-pink (if, def, return, import, ...)
+    "builtin":  "#E5D89C",   # warm yellow (print, len, range, ...)
+    "string":   "#D4A373",   # warm terracotta (strings)
+    "number":   "#A8C99B",   # soft sage green (numbers)
+    "comment":  "#8C9E78",   # muted olive (comments)
+    "function": "#E5D89C",   # warm yellow (function names after def)
+    "class":    "#7EC4B0",   # soft teal (class names)
+    "decorator":"#D4B577",   # warm gold (@decorators)
+    "operator": "#C5BFB3",   # warm gray (=, +, -, etc.)
+    "default":  "#C5BFB3",   # warm gray (default)
 }
 
 _PY_KEYWORDS = {
@@ -45,6 +45,7 @@ _PY_KEYWORDS = {
     "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
     "try", "while", "with", "yield",
 }
+
 _PY_BUILTINS = {
     "print", "len", "range", "int", "str", "float", "list", "dict",
     "set", "tuple", "bool", "type", "isinstance", "enumerate", "zip",
@@ -53,26 +54,58 @@ _PY_BUILTINS = {
     "classmethod", "hasattr", "getattr", "setattr", "Exception",
 }
 
-# ── DSL シンタックスハイライト色 ──────────────────────────────────
-_DSL_SH = {
-    "keyword":   "#C586C0",   # when, every, if, else, repeat
-    "function":  "#DCDCAA",   # notify, calendar.*, web.*, widget.*, gmail.*
-    "string":    "#CE9178",   # 文字列
-    "number":    "#B5CEA8",   # 数値
-    "comment":   "#6A9955",   # コメント
-    "traits":    "#569CD6",   # traits: ブロック
-    "operator":  "#D4D4D4",   # ==, >=, <=, etc.
-    "default":   "#D4D4D4",   # デフォルト
-}
+def _highlight_python(code: str) -> list[ft.TextSpan]:
+    """Python コードを簡易シンタックスハイライトして TextSpan リストを返す。"""
+    import re as _re
+    spans: list[ft.TextSpan] = []
 
-_DSL_KEYWORDS = {"when", "every", "if", "else", "repeat", "let", "and", "or", "not"}
-_DSL_FUNCTIONS = {
-    "notify", "calendar", "web", "widget", "gmail", "streak", "machine",
-    "fetch", "add", "read", "suggest", "show", "send", "search",
-    "summarize", "unread", "count", "weather", "get", "time", "now",
-    "random", "pick", "number", "update", "memory", "write", "device",
-    "cpu", "info", "analyze",
-}
+    # トークン化パターン（順序が重要）
+    token_pattern = _re.compile(
+        r'(#[^\n]*)'             # コメント
+        r'|(@\w+)'              # デコレータ
+        r'|("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')'  # 三重引用符文字列
+        r'|("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')'  # 通常文字列
+        r'|(\b\d+(?:\.\d+)?\b)'  # 数値
+        r'|(\b\w+\b)'           # 単語
+        r'|([^\w\s])'           # 記号
+        r'|(\s+)'              # 空白
+    )
+
+    for m in token_pattern.finditer(code):
+        text = m.group(0)
+        color = _SH["default"]
+        
+        if m.group(1):  # comment
+            color = _SH["comment"]
+        elif m.group(2):  # decorator
+            color = _SH["decorator"]
+        elif m.group(3) or m.group(4):  # string
+            color = _SH["string"]
+        elif m.group(5):  # number
+            color = _SH["number"]
+        elif m.group(6):  # word
+            word = m.group(6)
+            if word in _PY_KEYWORDS:
+                color = _SH["keyword"]
+            elif word in _PY_BUILTINS:
+                color = _SH["builtin"]
+            else:
+                color = _SH["default"]
+        elif m.group(7):  # operator/punctuation
+            color = _SH["operator"]
+            
+        spans.append(ft.TextSpan(text, ft.TextStyle(color=color, font_family="Courier New, monospace")))
+
+    # クラス名と関数名の簡単な判定パス
+    for i, span in enumerate(spans):
+        if span.text in ("class", "def") and i + 2 < len(spans):
+            if spans[i + 1].text.isspace() and spans[i + 2].text.isidentifier():
+                if span.text == "class":
+                    spans[i + 2].style.color = _SH["class"]
+                else:
+                    spans[i + 2].style.color = _SH["function"]
+
+    return spans
 
 
 def _highlight_python(code: str) -> list[ft.TextSpan]:
@@ -105,17 +138,26 @@ def _highlight_python(code: str) -> list[ft.TextSpan]:
         elif number:
             spans.append(ft.TextSpan(number, style=ft.TextStyle(color=_SH["number"], font_family=_CODE_FONT)))
         elif word:
+            c = _SH["default"]
             if word in _PY_KEYWORDS:
-                color = _SH["keyword"]
+                c = _SH["keyword"]
             elif word in _PY_BUILTINS:
-                color = _SH["builtin"]
-            else:
-                color = _SH["default"]
-            spans.append(ft.TextSpan(word, style=ft.TextStyle(color=color, font_family=_CODE_FONT)))
+                c = _SH["builtin"]
+            spans.append(ft.TextSpan(word, style=ft.TextStyle(color=c, font_family=_CODE_FONT)))
         elif symbol:
             spans.append(ft.TextSpan(symbol, style=ft.TextStyle(color=_SH["operator"], font_family=_CODE_FONT)))
         elif space:
-            spans.append(ft.TextSpan(space, style=ft.TextStyle(color=_SH["default"], font_family=_CODE_FONT)))
+            spans.append(ft.TextSpan(space, style=ft.TextStyle(font_family=_CODE_FONT)))
+            continue
+
+    # クラス定義、関数定義の次の単語を色付けする簡易処理
+    for i, span in enumerate(spans):
+        if span.text == "class" and i + 2 < len(spans):
+            if spans[i + 1].text.isspace() and spans[i + 2].text.isidentifier():
+                spans[i + 2].style.color = _SH["class"]
+        elif span.text == "def" and i + 2 < len(spans):
+            if spans[i + 1].text.isspace() and spans[i + 2].text.isidentifier():
+                spans[i + 2].style.color = _SH["function"]
 
     return spans
 
@@ -304,10 +346,36 @@ every 3h:
   last_temp = memory.read("last_temp", 20)
   if abs(w["temp"] - last_temp) > 5:
     notify(f"気温が急変！{last_temp}℃→{w['temp']}℃。服装に注意")
-  memory.write("last_temp", w["temp"])
+  memory.write("last_temp", w["condition"])
 """,
     },
 ]
+
+_DSL_SH = {
+    "keyword":   "#D19AD8",   # soft purple-pink: when, every, if, else, repeat
+    "function":  "#E5D89C",   # warm yellow: notify, calendar.*, web.*, widget.*, gmail.*
+    "string":    "#D4A373",   # warm terracotta: 文字列
+    "number":    "#A8C99B",   # soft sage: 数値
+    "comment":   "#8C9E78",   # muted olive: コメント
+    "traits":    "#7DB4D8",   # soft sky blue: traits: ブロック
+    "operator":  "#C5BFB3",   # warm gray: ==, >=, <=, etc.
+    "default":   "#C5BFB3",   # warm gray: デフォルト
+}
+
+_DSL_KEYWORDS = {"when", "every", "if", "else", "repeat", "let", "and", "or", "not"}
+_DSL_FUNCTIONS = {
+    "notify", "calendar", "web", "widget", "gmail", "streak", "machine",
+    "fetch", "add", "read", "suggest", "show", "send", "search",
+    "summarize", "unread", "count", "weather", "get", "time", "now",
+    "random", "pick", "number", "update", "memory", "write", "device",
+    "cpu", "info", "analyze",
+}
+
+_CODE_FONT = "Courier New, monospace"
+_DEFAULT_DSL = """# 毎朝ダリーが生活の文脈を分析して自動提案
+when morning:
+  machine.analyze()
+"""
 
 _BORDER = "#E8E4DC"
 _TAB_COLORS = [
@@ -316,6 +384,9 @@ _TAB_COLORS = [
 ]
 
 
+# ======================================================================
+# EditorView
+# ======================================================================
 class _Tab:
     """エディタの1タブ分の状態。"""
 
@@ -356,7 +427,7 @@ class EditorView:
         self._line_numbers = ft.Text(
             value=self._make_line_numbers(_DEFAULT_DSL),
             size=13,
-            color="#6A6560",
+            color="#8A8478",
             font_family=_CODE_FONT,
             text_align=ft.TextAlign.RIGHT,
         )
@@ -365,7 +436,7 @@ class EditorView:
             width=36,
             padding=ft.padding.only(top=16, right=4),
             alignment=ft.Alignment(1, -1),  # top_right
-            border=ft.border.only(right=ft.BorderSide(1, "#3A3835")),
+            border=ft.border.only(right=ft.BorderSide(1, "#4A4438")),
         )
 
         # 前面: 透明テキストの編集用TextField
@@ -373,7 +444,6 @@ class EditorView:
             value=_DEFAULT_DSL,
             multiline=True,
             min_lines=16,
-            expand=True,
             text_style=ft.TextStyle(
                 font_family=_CODE_FONT,
                 size=13, color="#00000000",  # 完全透明（ハイライト層を見せる）
@@ -382,8 +452,8 @@ class EditorView:
             border_color=ft.Colors.TRANSPARENT,
             focused_border_color=ft.Colors.TRANSPARENT,
             border_radius=12,
-            cursor_color=COLORS["yellow"],
-            hint_text="LifeScript DSL を入力…",
+            cursor_color=COLORS["blue"],
+            hint_text="やりたいことを書いてみよう — テンプレートから選ぶこともできます",
             hint_style=ft.TextStyle(color=COLORS["light_text"]),
             content_padding=ft.padding.only(left=48, top=16, right=16, bottom=16),
             on_change=self._on_editor_change,
@@ -394,15 +464,15 @@ class EditorView:
         self._minimap_text = ft.Text(
             value=_DEFAULT_DSL,
             size=2,
-            color="#6A6560",
+            color="#8A8478",
             font_family=_CODE_FONT,
         )
         self._minimap = ft.Container(
             content=self._minimap_text,
             width=60,
-            bgcolor="#1E1C19",
+            bgcolor="#2B2620",
             padding=ft.padding.symmetric(horizontal=4, vertical=8),
-            border=ft.border.only(left=ft.BorderSide(1, "#3A3835")),
+            border=ft.border.only(left=ft.BorderSide(1, "#4A4438")),
             alignment=ft.Alignment(-1, -1),  # top_left
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
@@ -413,17 +483,38 @@ class EditorView:
         # ── タブバー ──────────────────────────────────────────
         self._tab_bar = ft.Row(spacing=2, scroll=ft.ScrollMode.AUTO)
 
-        # Stack でハイライト層の上にTextFieldを重ねる + テンプレート
-        self._editor_stack = ft.Stack(
+        # TextFieldとHighlightを重ねるStack (expandを含めないことで高さを自動拡張)
+        self._inner_editor_stack = ft.Stack(
+            [self._dsl_highlight_layer, self._editor],
+        )
+
+        # 行番号とエディタを並べる
+        self._scrolling_editor_area = ft.Column(
             [
                 ft.Row([
                     self._line_number_gutter,
-                    ft.Stack(
-                        [self._dsl_highlight_layer, self._editor],
-                        expand=True,
-                    ),
-                    self._minimap,
-                ], spacing=0, expand=True),
+                    self._inner_editor_stack
+                ], spacing=0)
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.START,
+        )
+
+        # Scrollerとミニマップを並べる
+        self._editor_content_row = ft.Row(
+            [
+                self._scrolling_editor_area,
+                self._minimap,
+            ],
+            spacing=0,
+            expand=True,
+        )
+
+        # テンプレートギャラリー用のStack
+        self._main_editor_stack = ft.Stack(
+            [
+                self._editor_content_row,
                 self._template_gallery,
             ],
             expand=True,
@@ -435,7 +526,7 @@ class EditorView:
                     content=self._tab_bar,
                     padding=ft.padding.only(left=4, bottom=0),
                 ),
-                self._editor_stack,
+                self._main_editor_stack,
             ], spacing=0, expand=True),
             expand=2,
             border_radius=20,
@@ -454,39 +545,20 @@ class EditorView:
             size=12,
             selectable=True,
         )
-        self._python_preview_container = ft.Container(
-            content=ft.Column([self._python_preview_text],
-                              scroll=ft.ScrollMode.AUTO, expand=True),
+        self._python_scroll = ft.Column(
+            [self._python_preview_text],
+            scroll=ft.ScrollMode.AUTO,
             expand=True,
-            bgcolor="#1E1C19",
-            border_radius=14,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+        self._python_preview_container = ft.Container(
+            content=self._python_scroll,
+            expand=True,
+            bgcolor=COLORS["editor_bg"],
+            border_radius=10,
             padding=ft.padding.all(16),
         )
-
-        preview_panel = ft.Container(
-            content=ft.Column([
-                ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.Icons.CODE_ROUNDED, size=14, color=COLORS["green"]),
-                                ft.Text("compiled.py", size=12, weight=ft.FontWeight.W_600, color=COLORS["dark_text"]),
-                            ], spacing=6),
-                            bgcolor=COLORS["card_bg"],
-                            border_radius=ft.border_radius.only(top_left=10, top_right=10),
-                            padding=ft.padding.symmetric(horizontal=14, vertical=8),
-                            border=ft.border.only(bottom=ft.BorderSide(2, COLORS["green"])),
-                        ),
-                    ], spacing=2),
-                    padding=ft.padding.only(left=4, bottom=0),
-                ),
-                self._python_preview_container,
-            ], spacing=0, expand=True),
-            expand=1,
-            border_radius=16,
-            bgcolor="#1E1C19",
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        )
+        # preview_panel is now integrated into bottom_tabs
 
         # ── Scripts list ───────────────────────────────────────
         self._scripts_list = ft.ListView(expand=True, spacing=4, padding=4)
@@ -763,27 +835,73 @@ class EditorView:
             padding=ft.padding.symmetric(vertical=4),
         )
 
-        # ── Log panel ─────────────────────────────────────────
+        # ── Bottom Tabs (Python Preview / Output) ────────────────────
         self._log_list = ft.ListView(expand=True, auto_scroll=True, spacing=1)
+        self._logs_content = ft.Container(
+            content=self._log_list,
+            expand=True,
+            bgcolor=COLORS["editor_bg"],
+            border_radius=10,
+            padding=10,
+        )
 
-        log_panel = ft.Container(
+        self._bottom_tab_mode = ["python"]  # "python" or "logs"
+        self._bottom_content_container = ft.Container(expand=True)
+        self._bottom_tab_row = ft.Row(spacing=2)
+
+        def _switch_bottom_tab(tab_name: str) -> None:
+            self._bottom_tab_mode[0] = tab_name
+            self._bottom_content_container.content = self._python_preview_container if tab_name == "python" else self._logs_content
+            self._rebuild_bottom_tabs()
+            self._page.update()
+
+        self._switch_bottom_tab = _switch_bottom_tab
+
+        def _rebuild_bottom_tabs() -> None:
+            mode = self._bottom_tab_mode[0]
+            self._bottom_tab_row.controls = [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CODE_ROUNDED, size=14, color=COLORS["green"] if mode == "python" else COLORS["light_text"]),
+                        ft.Text("compiled.py", size=12, weight=ft.FontWeight.W_600 if mode == "python" else ft.FontWeight.W_500, color=COLORS["dark_text"] if mode == "python" else COLORS["mid_text"]),
+                    ], spacing=6),
+                    bgcolor=COLORS["card_bg"] if mode == "python" else ft.Colors.TRANSPARENT,
+                    border_radius=ft.border_radius.only(top_left=10, top_right=10),
+                    padding=ft.padding.symmetric(horizontal=14, vertical=6),
+                    border=ft.border.only(bottom=ft.BorderSide(2, COLORS["green"])) if mode == "python" else None,
+                    on_click=lambda e: self._switch_bottom_tab("python"),
+                ),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.TERMINAL_ROUNDED, size=14, color=COLORS["blue"] if mode == "logs" else COLORS["light_text"]),
+                        ft.Text("Output Logs", size=12, weight=ft.FontWeight.W_600 if mode == "logs" else ft.FontWeight.W_500, color=COLORS["dark_text"] if mode == "logs" else COLORS["mid_text"]),
+                    ], spacing=6),
+                    bgcolor=COLORS["card_bg"] if mode == "logs" else ft.Colors.TRANSPARENT,
+                    border_radius=ft.border_radius.only(top_left=10, top_right=10),
+                    padding=ft.padding.symmetric(horizontal=14, vertical=6),
+                    border=ft.border.only(bottom=ft.BorderSide(2, COLORS["blue"])) if mode == "logs" else None,
+                    on_click=lambda e: self._switch_bottom_tab("logs"),
+                ),
+            ]
+
+        self._rebuild_bottom_tabs = _rebuild_bottom_tabs
+        _rebuild_bottom_tabs()
+        self._bottom_content_container.content = self._python_preview_container
+
+        bottom_panel = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.TERMINAL_ROUNDED, size=14, color=COLORS["light_text"]),
-                    ft.Text("Output", size=12, weight=ft.FontWeight.W_600, color=COLORS["mid_text"]),
+                    self._bottom_tab_row,
                     ft.Container(expand=True),
                     ft.TextButton("Reference", style=ft.ButtonStyle(color=COLORS["blue"], padding=4),
                                   on_click=self._show_reference),
                 ], spacing=6),
                 ft.Container(
-                    content=self._log_list,
+                    content=self._bottom_content_container,
                     expand=True,
-                    bgcolor=COLORS["editor_bg"],
-                    border_radius=10,
-                    padding=10,
                 ),
-            ], spacing=6, expand=True),
-            height=160,
+            ], spacing=0),
+            height=200,
             bgcolor=COLORS["card_bg"],
             border_radius=20,
             padding=12,
@@ -791,15 +909,16 @@ class EditorView:
         )
 
         self._ref_items = ref_items
+        self._editor_panel.expand = 3
 
         self._content = ft.Column([
             ft.Row([
-                ft.Column([self._editor_panel, preview_panel], expand=3, spacing=8),
+                self._editor_panel,
                 sidebar,
             ], expand=True, spacing=12),
             action_bar,
-            log_panel,
-        ], expand=True, spacing=10)
+            bottom_panel,
+        ], expand=True, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
         self._root = ft.GestureDetector(
             content=self._content,
@@ -838,11 +957,11 @@ class EditorView:
                 ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=ft.padding.symmetric(horizontal=16, vertical=12),
                 border_radius=12,
-                bgcolor="#3A3835",
-                border=ft.border.all(1, "#4A4845"),
+                bgcolor="#443E36",
+                border=ft.border.all(1, "#544E46"),
                 on_click=lambda e, t=tmpl: self._select_template(t),
                 on_hover=lambda e: (
-                    setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                    setattr(e.control, "bgcolor", "#544E46" if e.data == "true" else "#443E36"),
                     e.control.update(),
                 ),
                 ink=True,
@@ -868,11 +987,11 @@ class EditorView:
             ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.symmetric(horizontal=16, vertical=12),
             border_radius=12,
-            bgcolor="#3A3835",
+            bgcolor="#443E36",
             border=ft.border.all(1, COLORS["yellow"] + "44"),
             on_click=lambda e: self._focus_chat(),
             on_hover=lambda e: (
-                setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                setattr(e.control, "bgcolor", "#544E46" if e.data == "true" else "#443E36"),
                 e.control.update(),
             ),
             ink=True,
@@ -884,19 +1003,19 @@ class EditorView:
                 ft.Container(
                     content=ft.Icon(ft.Icons.EDIT_NOTE_ROUNDED, size=22, color="#A09A93"),
                     width=40, height=40,
-                    bgcolor="#2D2B27",
+                    bgcolor="#352F28",
                     border_radius=10,
-                    border=ft.border.all(1, "#4A4845"),
+                    border=ft.border.all(1, "#544E46"),
                     alignment=ft.Alignment(0, 0),
                 ),
                 ft.Text("空白から書く", size=13, color="#A09A93"),
             ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.symmetric(horizontal=16, vertical=12),
             border_radius=12,
-            bgcolor="#3A3835",
+            bgcolor="#443E36",
             on_click=lambda e: self._dismiss_gallery(),
             on_hover=lambda e: (
-                setattr(e.control, "bgcolor", "#4A4845" if e.data == "true" else "#3A3835"),
+                setattr(e.control, "bgcolor", "#544E46" if e.data == "true" else "#443E36"),
                 e.control.update(),
             ),
             ink=True,
@@ -1614,6 +1733,8 @@ class EditorView:
             ft.Text("$ lifescript compile", color=_DIM, size=11,
                     font_family=_CODE_FONT, selectable=True)
         )
+        if hasattr(self, "_switch_bottom_tab"):
+            self._switch_bottom_tab("logs")
         self._page.update()
 
         # LLM呼び出し
@@ -1670,6 +1791,8 @@ class EditorView:
             )
 
             # Pythonコードをタイプライター風にプレビュー表示
+            if hasattr(self, "_switch_bottom_tab"):
+                self._switch_bottom_tab("python")
             python_code = result["code"]
             self._python_raw = ""
             self._python_preview_text.spans = []
@@ -1739,6 +1862,8 @@ class EditorView:
         python_code = result["code"]
 
         self._log("実行中…", COLORS["blue"])
+        if hasattr(self, "_switch_bottom_tab"):
+            self._switch_bottom_tab("python")
         self._set_preview("# 実行中…")
         self._page.update()
         try:
@@ -1811,8 +1936,13 @@ class EditorView:
         )
         self._tabs.append(tab)
         self._active_tab = tab
+        
+        # エディタのUI状態を更新
         self._editor.value = tab.dsl_text
         self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
+        self._line_numbers.value = self._make_line_numbers(tab.dsl_text)
+        self._minimap_text.value = tab.dsl_text
+        
         self._update_gallery_visibility()
         self._set_preview(script.get("compiled_python", "# (empty)"))
         self._rebuild_tab_bar()

@@ -258,17 +258,20 @@ class HomeView:
 
         # ── ウィジェット群 ────────────────────────────────────
         if self._current_page == 0:
-            # メインページ: 時計 + カレンダー | ダリー + スケジュール
+            # メインページ: 時計 + カレンダー + おすすめ | ダリー + スケジュール
             clock_widget = self._widget_clock()
             calendar_widget = self._widget_calendar()
             schedule_widget = self._widget_schedule()
             machine_widget = self._widget_machine()
+            recommended_widget = self._widget_recommended_templates()
 
             page_content = ft.Row([
                 ft.Column([
                     clock_widget,
                     ft.Container(height=10),
                     calendar_widget,
+                    ft.Container(height=10),
+                    recommended_widget,
                 ], expand=6, spacing=0, scroll=ft.ScrollMode.AUTO),
                 ft.Column([
                     machine_widget,
@@ -320,8 +323,76 @@ class HomeView:
             page_content,
         ], expand=True, spacing=0)
 
+    def _widget_recommended_templates(self) -> ft.Container:
+        """おすすめのテンプレート（IDEのギャラリーから抜粋）を表示。"""
+        # 初心者向けの実用的で分かりやすい2つを抜粋
+        templates = [
+            {
+                "icon": ft.Icons.EMAIL_ROUNDED,
+                "color": "#00C875",
+                "title": "未読メールを通知",
+                "desc": "Gmailの未読メールをチェックして通知します",
+                "dsl": "# 未読メールを通知\nwhen gmail.unread() >= 1:\n  notify(\"未読メールがあるよ: \" + gmail.search(\"is:unread\", limit=3))\n",
+            },
+            {
+                "icon": ft.Icons.AUTO_AWESOME_ROUNDED,
+                "color": "#FFD02F",
+                "title": "毎朝ダリーが生活を分析",
+                "desc": "カレンダーや文脈を分析して提案を自動生成します",
+                "dsl": "# 毎朝ダリーが生活文脈を分析して提案\nwhen morning:\n  machine.analyze()\n",
+            }
+        ]
+
+        def _make_item(tmpl: dict) -> ft.Container:
+            return ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Icon(tmpl["icon"], size=16, color="#FFFFFF"),
+                        width=32, height=32,
+                        bgcolor=tmpl["color"],
+                        border_radius=8,
+                        alignment=ft.Alignment(0, 0),
+                    ),
+                    ft.Column([
+                        ft.Text(tmpl["title"], size=13, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                        ft.Text(tmpl["desc"], size=11, color=MID_TEXT,
+                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    ], spacing=2, expand=True),
+                    ft.Container(
+                        content=ft.Text("試す", size=11, weight=ft.FontWeight.W_600, color=BLUE),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                        border_radius=12,
+                        bgcolor=f"{BLUE}10",
+                        on_click=lambda e: self._on_open_ide(tmpl["dsl"]) if self._on_open_ide else None,
+                        ink=True,
+                    ),
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(vertical=8, horizontal=4),
+            )
+
+        items = []
+        for i, tmpl in enumerate(templates):
+            items.append(_make_item(tmpl))
+            if i < len(templates) - 1:
+                items.append(ft.Divider(height=1, color=_BORDER))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.LIGHTBULB_CIRCLE_ROUNDED, size=20, color=ORANGE),
+                    ft.Text("おすすめ", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=4),
+                *items,
+            ], spacing=4),
+            bgcolor=CARD_BG,
+            border_radius=20,
+            padding=16,
+            shadow=CARD_SHADOW,
+        )
+
     # ==================================================================
-    # ダリーの一言
+    # スケジュールウィジェット
     # ==================================================================
     def _get_darii_message(self, hour: int, active_count: int) -> str:
         """時間帯・状況に応じたダリーの一言を返す。"""
@@ -599,43 +670,43 @@ class HomeView:
                 ft.Row([
                     # 時
                     ft.Container(
-                        content=ft.Text(h_str, size=52, weight=ft.FontWeight.W_300,
+                        content=ft.Text(h_str, size=36, weight=ft.FontWeight.W_300,
                                         color=DARK_TEXT, font_family="Courier New"),
                         bgcolor=CARD_BG,
-                        border_radius=18,
-                        padding=ft.padding.symmetric(horizontal=16, vertical=4),
+                        border_radius=14,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=2),
                         shadow=SHADOW_SOFT,
                     ),
                     # コロン
                     ft.Column([
-                        ft.Container(width=8, height=8, bgcolor=accent, border_radius=4),
-                        ft.Container(height=8),
-                        ft.Container(width=8, height=8, bgcolor=accent, border_radius=4),
+                        ft.Container(width=6, height=6, bgcolor=accent, border_radius=3),
+                        ft.Container(height=6),
+                        ft.Container(width=6, height=6, bgcolor=accent, border_radius=3),
                     ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     # 分
                     ft.Container(
-                        content=ft.Text(m_str, size=52, weight=ft.FontWeight.W_300,
+                        content=ft.Text(m_str, size=36, weight=ft.FontWeight.W_300,
                                         color=DARK_TEXT, font_family="Courier New"),
                         bgcolor=CARD_BG,
-                        border_radius=18,
-                        padding=ft.padding.symmetric(horizontal=16, vertical=4),
+                        border_radius=14,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=2),
                         shadow=SHADOW_SOFT,
                     ),
-                ], alignment=ft.MainAxisAlignment.CENTER, spacing=12,
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                ft.Container(height=8),
+                ft.Container(height=6),
                 ft.Container(
-                    content=ft.Text(f"{date_str} ({weekday})", size=14,
+                    content=ft.Text(f"{date_str} ({weekday})", size=12,
                                     weight=ft.FontWeight.W_500, color=MID_TEXT),
                     bgcolor=CARD_BG,
-                    border_radius=20,
-                    padding=ft.padding.symmetric(horizontal=16, vertical=6),
+                    border_radius=16,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
                     shadow=SHADOW_SOFT,
                 ),
             ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor=f"{accent}15",
-            border_radius=22,
-            padding=ft.padding.symmetric(vertical=20, horizontal=20),
+            border_radius=18,
+            padding=ft.padding.symmetric(vertical=14, horizontal=14),
             alignment=ft.Alignment(0, 0),
             shadow=CARD_SHADOW,
         )
@@ -995,6 +1066,21 @@ class HomeView:
             visible=False,
         )
 
+        # 「LifeScriptで書く」ボタン（初期非表示）
+        write_button = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.EDIT_NOTE_ROUNDED, size=14, color=BLUE),
+                ft.Text("LifeScriptで書く", size=11,
+                        weight=ft.FontWeight.W_600, color=BLUE),
+            ], spacing=4, alignment=ft.MainAxisAlignment.CENTER),
+            border_radius=8,
+            border=ft.border.all(1, f"{BLUE}44"),
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            on_click=lambda e: self._generate_dsl_from_suggestion(selected_entry[0]),
+            ink=True,
+            visible=False,
+        )
+
         # ── 提案カード群 ──
         suggestion_cards: list[ft.Container] = []
         suggestion_entries: list[dict] = []
@@ -1019,6 +1105,7 @@ class HomeView:
                     card.border = ft.border.all(1, "#F0E8D8")
                     card.bgcolor = "#FFFBF0"
             ask_button.visible = True
+            write_button.visible = True
             self._page.update()
 
         for i, entry in enumerate(suggestion_entries):
@@ -1053,25 +1140,23 @@ class HomeView:
                 ))
 
             card = ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Container(
-                            content=ft.Column(card_content, spacing=4),
-                            expand=True,
-                        ),
-                        ft.IconButton(
-                            ft.Icons.CHECK_ROUNDED, icon_size=18, icon_color=GREEN,
-                            tooltip="承認", style=ft.ButtonStyle(padding=2),
-                            on_click=lambda e, ent=entry: self._accept_suggestion(ent),
-                        ),
-                        ft.IconButton(
-                            ft.Icons.CLOSE_ROUNDED, icon_size=16, icon_color=LIGHT_TEXT,
-                            tooltip="却下", style=ft.ButtonStyle(padding=2),
-                            on_click=lambda e, lid=log_id: self._delete_log(lid),
-                        ),
-                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
-                ], spacing=0),
-                padding=ft.padding.symmetric(vertical=4, horizontal=8),
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Column(card_content, spacing=4),
+                        expand=True,
+                    ),
+                    ft.IconButton(
+                        ft.Icons.CHECK_ROUNDED, icon_size=18, icon_color=GREEN,
+                        tooltip="承認", style=ft.ButtonStyle(padding=2),
+                        on_click=lambda e, ent=entry: self._accept_suggestion(ent),
+                    ),
+                    ft.IconButton(
+                        ft.Icons.CLOSE_ROUNDED, icon_size=16, icon_color=LIGHT_TEXT,
+                        tooltip="却下", style=ft.ButtonStyle(padding=2),
+                        on_click=lambda e, lid=log_id: self._delete_log(lid),
+                    ),
+                ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                padding=ft.padding.symmetric(vertical=6, horizontal=8),
                 bgcolor="#FFFBF0",
                 border=ft.border.all(1, "#F0E8D8"),
                 border_radius=14,
@@ -1179,7 +1264,7 @@ class HomeView:
                 legend,
                 ft.Divider(height=1, color=_BORDER),
                 ft.Column(suggestion_cards, spacing=6),
-                ask_button,
+                ft.Row([ask_button, write_button], spacing=6),
                 *observations_section,
             ], spacing=4),
             bgcolor=CARD_BG,
@@ -1473,6 +1558,16 @@ class HomeView:
                         ft.Text(widget_name, size=16, weight=ft.FontWeight.W_700,
                                 color=DARK_TEXT),
                         ft.Container(expand=True),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Text("⚡", size=9),
+                                ft.Text("LifeScript", size=9, color=BLUE,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                            bgcolor=f"{BLUE}10",
+                            border_radius=6,
+                            padding=ft.padding.symmetric(horizontal=5, vertical=2),
+                        ),
                         ft.Text(triggered[5:] if len(triggered) > 5 else triggered,
                                 size=10, color=LIGHT_TEXT),
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -2000,6 +2095,96 @@ class HomeView:
             self._on_navigate(1)  # IDE画面に遷移（DSL挿入なし、フォールバック）
 
         self._refresh_content()
+
+    def _generate_dsl_from_suggestion(self, entry: dict) -> None:
+        """提案内容からLLMでLifeScript DSLを生成し、IDEに遷移する。"""
+        import re as _re
+
+        content = entry.get("content", "")
+        body, reason = self._extract_reason(content)
+
+        # メタデータ解析
+        meta_match = _re.search(r"<!--meta:(.*?)-->", content)
+        meta = {}
+        if meta_match:
+            try:
+                import json as _json
+                meta = _json.loads(meta_match.group(1))
+            except Exception:
+                pass
+
+        # LLMを使ってLifeScript DSLを生成
+        def _generate():
+            try:
+                from .. import llm as _llm
+                from ..functions import FUNCTION_DESCRIPTIONS
+
+                # 関数ライブラリのサマリーを構築
+                func_lines = []
+                for f in FUNCTION_DESCRIPTIONS:
+                    func_lines.append(f"- `{f['signature']}`  — {f['description']}")
+                functions_section = "\n".join(func_lines)
+
+                # メタデータ情報も含める
+                meta_info = ""
+                if meta.get("event_title"):
+                    meta_info += f"\nイベント名: {meta['event_title']}"
+                if meta.get("event_date"):
+                    meta_info += f"\n日付: {meta['event_date']}"
+                if meta.get("event_time"):
+                    meta_info += f"\n時刻: {meta['event_time']}"
+
+                prompt = f"""以下の提案内容を LifeScript DSL に変換してください。
+
+## 提案内容
+{body}
+{meta_info}
+
+{f"## 根拠: {reason}" if reason else ""}
+
+## 使用可能な関数
+{functions_section}
+
+## LifeScript DSL の書き方
+- DSL はYAML風の宣言的記法です
+- `when <条件>:` で条件分岐
+- `every day:` や `when HH:MM:` でスケジュール実行
+- ドット記法で関数を呼びます（例: `calendar.add(...)`, `notify(...)`, `weather.get()`）
+- `traits:` ブロックでユーザーの文脈を定義できます
+- コメントは `#` で始めます
+
+## 出力形式
+LifeScript DSL のコードのみを出力してください。
+マークダウンのコードブロックや説明文は不要です。
+コメントで提案内容を簡潔に説明してください。"""
+
+                model = os.getenv("LIFESCRIPT_MODEL", "gemini/gemini-2.5-flash")
+                response = _llm.completion(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "あなたはLifeScript DSLの生成アシスタントです。提案内容を正確にLifeScript DSLに変換します。DSLコードのみ出力してください。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                )
+                dsl = response.choices[0].message.content.strip()
+
+                # マークダウンのコードブロックを除去
+                dsl = _re.sub(r"^```(?:lifescript|yaml|dsl)?\s*\n?", "", dsl)
+                dsl = _re.sub(r"\n?```\s*$", "", dsl)
+                dsl = dsl.strip()
+
+                # IDEに遷移してDSLを挿入
+                if self._on_open_ide:
+                    self._on_open_ide(dsl)
+                elif self._on_navigate:
+                    self._on_navigate(1)
+
+            except Exception as e:
+                from .. import log_queue
+                log_queue.log("System", f"DSL生成エラー: {e}", "ERROR")
+
+        threading.Thread(target=_generate, daemon=True).start()
 
     # ==================================================================
     # 追加ダイアログ

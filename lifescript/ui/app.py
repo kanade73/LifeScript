@@ -19,7 +19,7 @@ from .. import log_queue
 BG = "#FAFAF8"
 SIDEBAR_BG = "#F0EDE6"
 CARD_BG = "#FFFFFF"
-EDITOR_BG = "#2D2B27"
+EDITOR_BG = "#352F28"
 EDITOR_FG = "#E8E4DC"
 YELLOW = "#FFD02F"
 ORANGE = "#FFA500"
@@ -242,7 +242,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
             nav_items = [
                 (ft.Icons.HOME_ROUNDED, "Home"),
-                (ft.Icons.CODE_ROUNDED, "IDE"),
+                (ft.Icons.EDIT_NOTE_ROUNDED, "LifeScript"),
                 (ft.Icons.DASHBOARD_ROUNDED, "Dashboard"),
                 (ft.Icons.MENU_BOOK_ROUNDED, "Reference"),
                 (ft.Icons.AUTO_AWESOME_ROUNDED, "ダリー"),
