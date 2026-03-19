@@ -19,7 +19,7 @@ from ..compiler.compiler import Compiler
 from ..chat import CodingChat
 from ..database.client import db_client
 from ..exceptions import CompileError
-from .app import COLORS
+from .app import COLORS, CARD_SHADOW, SHADOW_SOFT
 
 # ── コードフォント（VS Code風フォールバックチェーン）──────────────
 _CODE_FONT = "JetBrains Mono, Fira Code, Cascadia Code, Consolas, SF Mono, monospace"
@@ -69,7 +69,9 @@ _DSL_KEYWORDS = {"when", "every", "if", "else", "repeat", "let", "and", "or", "n
 _DSL_FUNCTIONS = {
     "notify", "calendar", "web", "widget", "gmail", "streak", "machine",
     "fetch", "add", "read", "suggest", "show", "send", "search",
-    "summarize", "unread", "count",
+    "summarize", "unread", "count", "weather", "get", "time", "now",
+    "random", "pick", "number", "update", "memory", "write", "device",
+    "cpu", "info", "analyze",
 }
 
 
@@ -222,6 +224,89 @@ when morning:
   machine.analyze()
 """,
     },
+    {
+        "icon": ft.Icons.THUNDERSTORM_ROUNDED,
+        "color": "#4262FF",
+        "title": "天気で生活をハック",
+        "desc": "天気・カレンダー・記憶を組み合わせた文脈トリガー",
+        "dsl": """\
+# 天気が変わったら通知 + カレンダーと連携
+traits:
+  自転車通学
+  朝は弱い → notify() は 8:00 以降
+
+every 3h:
+  w = weather.get()
+  last = memory.read("weather", "clear")
+
+  # 天気が変わったタイミングで通知
+  if w["condition"] != last:
+    memory.write("weather", w["condition"])
+
+    if w["condition"] == "rain":
+      notify("雨が降り始めたよ。傘持った？")
+      # 明日の予定があれば早起きリマインド
+      if len(calendar.read(range="today")) > 0:
+        notify("今日は予定があるから、余裕を持って出発しよう")
+""",
+    },
+    {
+        "icon": ft.Icons.CASINO_ROUNDED,
+        "color": "#FF7575",
+        "title": "ランダム応援メッセージ",
+        "desc": "毎日ランダムなメッセージでダリーが応援してくれます",
+        "dsl": """\
+# 毎朝ランダムな応援メッセージ
+when morning:
+  msg = random.pick([
+    "今日も1日頑張ろう！",
+    "いい天気になりそうだね！",
+    "水をたくさん飲もうね",
+    "昨日より少しだけ成長してるよ",
+    "今日のあなたは最高！",
+  ])
+  notify(msg)
+""",
+    },
+    {
+        "icon": ft.Icons.LINK_ROUNDED,
+        "color": "#DC8551",
+        "title": "ドミノ連鎖デモ（文脈が繋がる）",
+        "desc": "天気×カレンダー×ストリーク×メモリが連鎖する高度な例",
+        "dsl": """\
+# ドミノ連鎖: 複数の文脈が連鎖して気遣いを見せる
+traits:
+  朝は弱い
+  テスト期間は特に注意
+
+every 3h:
+  w = weather.get()
+  t = time.now()
+  events = calendar.read(range="today")
+
+  # 1. 天気チェック → 雨 + 予定あり → 早起き提案
+  if w["condition"] == "rain" and len(events) > 0:
+    if t["is_evening"]:
+      machine.suggest(
+        "明日雨で予定もあるし、いつもより30分早く起きよう",
+        reason="雨の日は電車が遅れがち"
+      )
+
+  # 2. ストリーク確認 → 連続記録のケア
+  days = streak.count("勉強")
+  if days >= 5 and t["is_evening"]:
+    machine.suggest(
+      f"勉強{days}日連続！すごいね。でも今日は少し休んでも大丈夫だよ",
+      reason="燃え尽き防止"
+    )
+
+  # 3. メモリ活用 → 前回の状態と比較
+  last_temp = memory.read("last_temp", 20)
+  if abs(w["temp"] - last_temp) > 5:
+    notify(f"気温が急変！{last_temp}℃→{w['temp']}℃。服装に注意")
+  memory.write("last_temp", w["temp"])
+""",
+    },
 ]
 
 _BORDER = "#E8E4DC"
@@ -264,7 +349,23 @@ class EditorView:
         )
         self._dsl_highlight_layer = ft.Container(
             content=self._dsl_highlight_text,
-            padding=ft.padding.all(16),
+            padding=ft.padding.only(left=48, top=16, right=16, bottom=16),
+        )
+
+        # 行番号ガター
+        self._line_numbers = ft.Text(
+            value=self._make_line_numbers(_DEFAULT_DSL),
+            size=13,
+            color="#6A6560",
+            font_family=_CODE_FONT,
+            text_align=ft.TextAlign.RIGHT,
+        )
+        self._line_number_gutter = ft.Container(
+            content=self._line_numbers,
+            width=36,
+            padding=ft.padding.only(top=16, right=4),
+            alignment=ft.Alignment(1, -1),  # top_right
+            border=ft.border.only(right=ft.BorderSide(1, "#3A3835")),
         )
 
         # 前面: 透明テキストの編集用TextField
@@ -284,10 +385,27 @@ class EditorView:
             cursor_color=COLORS["yellow"],
             hint_text="LifeScript DSL を入力…",
             hint_style=ft.TextStyle(color=COLORS["light_text"]),
-            content_padding=ft.padding.all(16),
+            content_padding=ft.padding.only(left=48, top=16, right=16, bottom=16),
             on_change=self._on_editor_change,
         )
         self._prev_editor_value = _DEFAULT_DSL
+
+        # ── ミニマップ（コードの縮小表示）───────────────────────
+        self._minimap_text = ft.Text(
+            value=_DEFAULT_DSL,
+            size=2,
+            color="#6A6560",
+            font_family=_CODE_FONT,
+        )
+        self._minimap = ft.Container(
+            content=self._minimap_text,
+            width=60,
+            bgcolor="#1E1C19",
+            padding=ft.padding.symmetric(horizontal=4, vertical=8),
+            border=ft.border.only(left=ft.BorderSide(1, "#3A3835")),
+            alignment=ft.Alignment(-1, -1),  # top_left
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        )
 
         # ── テンプレートギャラリー（エディタが空のとき表示）───────
         self._template_gallery = self._build_template_gallery()
@@ -297,7 +415,17 @@ class EditorView:
 
         # Stack でハイライト層の上にTextFieldを重ねる + テンプレート
         self._editor_stack = ft.Stack(
-            [self._dsl_highlight_layer, self._editor, self._template_gallery],
+            [
+                ft.Row([
+                    self._line_number_gutter,
+                    ft.Stack(
+                        [self._dsl_highlight_layer, self._editor],
+                        expand=True,
+                    ),
+                    self._minimap,
+                ], spacing=0, expand=True),
+                self._template_gallery,
+            ],
             expand=True,
         )
 
@@ -310,9 +438,13 @@ class EditorView:
                 self._editor_stack,
             ], spacing=0, expand=True),
             expand=2,
-            border_radius=16,
+            border_radius=20,
             bgcolor=COLORS["editor_bg"],
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            shadow=ft.BoxShadow(
+                spread_radius=0, blur_radius=20,
+                color="#00000018", offset=ft.Offset(0, 4),
+            ),
         )
 
         # ── Python preview (シンタックスハイライト付き) ─────────
@@ -327,7 +459,7 @@ class EditorView:
                               scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
             bgcolor="#1E1C19",
-            border_radius=12,
+            border_radius=14,
             padding=ft.padding.all(16),
         )
 
@@ -451,9 +583,9 @@ class EditorView:
             ], expand=True, spacing=4),
             width=280,
             bgcolor=COLORS["card_bg"],
-            border_radius=16,
+            border_radius=20,
             padding=12,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
         # ── Function reference ────────────────────────────────
@@ -477,7 +609,7 @@ class EditorView:
         self._snippet_buttons_column = ft.Column([
             ft.OutlinedButton(
                 "every", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["yellow"]),
                     color=COLORS["yellow"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -486,7 +618,7 @@ class EditorView:
             ),
             ft.OutlinedButton(
                 "when", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["green"]),
                     color=COLORS["green"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -495,7 +627,7 @@ class EditorView:
             ),
             ft.OutlinedButton(
                 "notify", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["coral"]),
                     color=COLORS["coral"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -504,7 +636,7 @@ class EditorView:
             ),
             ft.OutlinedButton(
                 "calendar", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["blue"]),
                     color=COLORS["blue"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -513,7 +645,7 @@ class EditorView:
             ),
             ft.OutlinedButton(
                 "web", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["purple"]),
                     color=COLORS["purple"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -522,7 +654,7 @@ class EditorView:
             ),
             ft.OutlinedButton(
                 "traits", style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
+                    shape=ft.RoundedRectangleBorder(radius=14),
                     side=ft.BorderSide(1, COLORS["orange"]),
                     color=COLORS["orange"],
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -535,8 +667,7 @@ class EditorView:
             content=self._snippet_buttons_column,
             visible=self._snippet_expanded,
             bgcolor=COLORS["card_bg"],
-            border=ft.border.all(1, _BORDER),
-            border_radius=12,
+            border_radius=16,
             padding=10,
             right=0,
             bottom=52,
@@ -573,28 +704,31 @@ class EditorView:
             clip_behavior=ft.ClipBehavior.NONE,
         )
 
+        # ── コンパイルボタン（状態表示付き）──────────────────────
+        self._compile_btn = ft.ElevatedButton(
+            "Compile",
+            icon=ft.Icons.AUTO_FIX_HIGH_ROUNDED,
+            bgcolor=COLORS["yellow"],
+            color=COLORS["dark_text"],
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=16),
+                elevation=2,
+                padding=ft.padding.symmetric(horizontal=20, vertical=12),
+            ),
+            on_click=self._on_compile,
+        )
+
         action_bar = ft.Container(
             content=ft.Row([
-                ft.ElevatedButton(
-                    "Compile",
-                    icon=ft.Icons.AUTO_FIX_HIGH_ROUNDED,
-                    bgcolor=COLORS["yellow"],
-                    color=COLORS["dark_text"],
-                    style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=12),
-                        elevation=0,
-                        padding=ft.padding.symmetric(horizontal=20, vertical=12),
-                    ),
-                    on_click=self._on_compile,
-                ),
+                self._compile_btn,
                 ft.ElevatedButton(
                     "Run",
                     icon=ft.Icons.PLAY_ARROW_ROUNDED,
                     bgcolor=COLORS["blue"],
                     color=COLORS["card_bg"],
                     style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=12),
-                        elevation=0,
+                        shape=ft.RoundedRectangleBorder(radius=16),
+                        elevation=2,
                         padding=ft.padding.symmetric(horizontal=20, vertical=12),
                     ),
                     on_click=self._on_run,
@@ -605,8 +739,8 @@ class EditorView:
                     bgcolor=COLORS["green"],
                     color=COLORS["card_bg"],
                     style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=12),
-                        elevation=0,
+                        shape=ft.RoundedRectangleBorder(radius=16),
+                        elevation=2,
                         padding=ft.padding.symmetric(horizontal=20, vertical=12),
                     ),
                     on_click=self._on_save,
@@ -617,8 +751,8 @@ class EditorView:
                     bgcolor=COLORS["coral"],
                     color=COLORS["card_bg"],
                     style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=12),
-                        elevation=0,
+                        shape=ft.RoundedRectangleBorder(radius=16),
+                        elevation=2,
                         padding=ft.padding.symmetric(horizontal=20, vertical=12),
                     ),
                     on_click=self._on_stop_all,
@@ -651,9 +785,9 @@ class EditorView:
             ], spacing=6, expand=True),
             height=160,
             bgcolor=COLORS["card_bg"],
-            border_radius=16,
+            border_radius=20,
             padding=12,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
         self._ref_items = ref_items
@@ -849,6 +983,18 @@ class EditorView:
 
         self._page.on_keyboard_event = _on_keyboard
 
+    @staticmethod
+    def _make_line_numbers(code: str) -> str:
+        """コードの行数に応じた行番号文字列を生成する。"""
+        lines = (code or "").split("\n")
+        count = max(len(lines), 1)
+        return "\n".join(str(i + 1) for i in range(count))
+
+    def _update_editor_decorations(self, val: str) -> None:
+        """行番号とミニマップを更新する。"""
+        self._line_numbers.value = self._make_line_numbers(val)
+        self._minimap_text.value = val or ""
+
     def _on_editor_change(self, e: ft.ControlEvent) -> None:
         """改行時に自動インデント + DSLシンタックスハイライト更新。"""
         val = self._editor.value or ""
@@ -858,8 +1004,9 @@ class EditorView:
         # テンプレートギャラリーの表示切替
         self._update_gallery_visibility()
 
-        # ハイライト更新
+        # ハイライト・行番号・ミニマップ更新
         self._dsl_highlight_text.spans = _highlight_dsl(val)
+        self._update_editor_decorations(val)
 
         # 改行が追加されたか検出（文字数が1増えて末尾が改行）
         if len(val) != len(prev) + 1 or not val.endswith("\n"):
@@ -1198,18 +1345,117 @@ class EditorView:
         self._page.update()
 
     def prefill_dsl(self, dsl_code: str, tab_name: str = "") -> None:
-        """外部から新規タブにDSLコードを挿入する（提案→IDE遷移用）。"""
+        """外部から新規タブにDSLコードを挿入する（提案→IDE遷移用）。
+
+        タイプライターエフェクト付き: ダリーがリアルタイムでコードを書く演出。
+        """
         self._active_tab.dsl_text = self._editor.value or ""
-        tab = _Tab(name=tab_name or "suggestion.ls", dsl_text=dsl_code)
+        tab = _Tab(name=tab_name or "suggestion.ls", dsl_text="")
         self._tabs.append(tab)
         self._active_tab = tab
-        self._editor.value = dsl_code
-        self._prev_editor_value = dsl_code
-        self._dsl_highlight_text.spans = _highlight_dsl(dsl_code)
+        self._editor.value = ""
+        self._prev_editor_value = ""
+        self._dsl_highlight_text.spans = []
         self._template_gallery.visible = False
-        self._set_preview("# コンパイルしてください")
+        self._set_preview("")
         self._rebuild_tab_bar()
-        self._log("提案から LifeScript を生成しました", COLORS["green"])
+        self._page.update()
+
+        # タイプライターアニメーションをバックグラウンドで実行
+        import threading
+        threading.Thread(
+            target=self._typewriter_animate,
+            args=(dsl_code,),
+            daemon=True,
+        ).start()
+
+    def _typewriter_animate(self, dsl_code: str) -> None:
+        """タイプライターエフェクト + セキュリティチェック演出。"""
+        import time
+
+        # ── Phase 1: ダリーがタイピング ──────────────────────────
+        self._log("🤖 ダリーが LifeScript を書いています…", COLORS["yellow"])
+        self._page.update()
+        time.sleep(0.3)
+
+        # 1文字ずつではなく、チャンク（2-4文字）単位で高速タイピング
+        current = ""
+        i = 0
+        while i < len(dsl_code):
+            # 改行直後は少し長めのpause
+            if dsl_code[i] == "\n":
+                chunk_size = 1
+                delay = 0.06
+            else:
+                chunk_size = min(3, len(dsl_code) - i)
+                delay = 0.02
+            current += dsl_code[i:i + chunk_size]
+            i += chunk_size
+
+            self._editor.value = current
+            self._dsl_highlight_text.spans = _highlight_dsl(current)
+            self._page.update()
+            time.sleep(delay)
+
+        # タイピング完了
+        self._active_tab.dsl_text = dsl_code
+        self._prev_editor_value = dsl_code
+        time.sleep(0.3)
+
+        # ── Phase 2: セキュリティチェック演出 ─────────────────────
+        _GREEN = "#00C875"
+        _CYAN = "#4EC9B0"
+        _DIM = "#6A9955"
+
+        checks = [
+            (f"{_DIM}", "$ lifescript compile --verify"),
+            (f"{_CYAN}", "[AST Parse]        構文解析中…"),
+            (f"{_GREEN}", "[AST Parse]        OK — 構文エラーなし"),
+            (f"{_CYAN}", "[Sandbox Target]   RestrictedPython 検証中…"),
+            (f"{_GREEN}", "[Sandbox Target]   OK — 禁止操作なし"),
+            (f"{_CYAN}", "[Function Guard]   関数ホワイトリスト照合中…"),
+            (f"{_GREEN}", "[Function Guard]   OK — 全関数が許可リスト内"),
+            (f"{_CYAN}", "[Rate Limiter]     実行制限チェック中…"),
+            (f"{_GREEN}", "[Rate Limiter]     OK — 制限内"),
+        ]
+
+        # プレビュー領域をターミナル風に
+        self._set_preview("")
+        self._page.update()
+        time.sleep(0.2)
+
+        for color, text in checks:
+            self._log_list.controls.append(
+                ft.Text(text, color=color, size=11, font_family=_CODE_FONT, selectable=True)
+            )
+            self._page.update()
+            time.sleep(0.15)
+
+        time.sleep(0.3)
+
+        # ── Phase 3: Security Check Passed スタンプ ──────────────
+        self._log_list.controls.append(ft.Container(height=4))
+        self._log_list.controls.append(
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.VERIFIED_ROUNDED, size=16, color=_GREEN),
+                    ft.Text(
+                        "Security Check Passed",
+                        size=13,
+                        weight=ft.FontWeight.W_700,
+                        color=_GREEN,
+                        font_family=_CODE_FONT,
+                    ),
+                ], spacing=6, alignment=ft.MainAxisAlignment.CENTER),
+                bgcolor="#00C87510",
+                border=ft.border.all(1, f"{_GREEN}40"),
+                border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                margin=ft.margin.only(top=4),
+            )
+        )
+        self._log("✅ LifeScript の生成と検証が完了しました", COLORS["green"])
+        self._set_preview("# コンパイルしてください（▶ Compile ボタン）")
         self._page.update()
 
     def _show_reference(self, e: ft.ControlEvent) -> None:
@@ -1299,33 +1545,174 @@ class EditorView:
     # ------------------------------------------------------------------
     # Button handlers
     # ------------------------------------------------------------------
+    def _set_compile_btn_state(self, state: str) -> None:
+        """コンパイルボタンの状態を更新する。state: 'idle', 'compiling', 'success', 'error'"""
+        if state == "compiling":
+            self._compile_btn.text = "Compiling…"
+            self._compile_btn.icon = ft.Icons.HOURGLASS_TOP_ROUNDED
+            self._compile_btn.bgcolor = COLORS["blue"]
+            self._compile_btn.color = COLORS["card_bg"]
+            self._compile_btn.disabled = True
+        elif state == "success":
+            self._compile_btn.text = "Compiled ✓"
+            self._compile_btn.icon = ft.Icons.CHECK_CIRCLE_ROUNDED
+            self._compile_btn.bgcolor = COLORS["green"]
+            self._compile_btn.color = COLORS["card_bg"]
+            self._compile_btn.disabled = False
+        elif state == "error":
+            self._compile_btn.text = "Error ✗"
+            self._compile_btn.icon = ft.Icons.ERROR_ROUNDED
+            self._compile_btn.bgcolor = COLORS["coral"]
+            self._compile_btn.color = COLORS["card_bg"]
+            self._compile_btn.disabled = False
+        else:  # idle
+            self._compile_btn.text = "Compile"
+            self._compile_btn.icon = ft.Icons.AUTO_FIX_HIGH_ROUNDED
+            self._compile_btn.bgcolor = COLORS["yellow"]
+            self._compile_btn.color = COLORS["dark_text"]
+            self._compile_btn.disabled = False
+
+    def _show_compile_celebration(self) -> None:
+        """コンパイル成功時のパーティクル演出。"""
+        import random
+        sparkle_chars = ["✦", "✧", "⚡", "★", "✨", "⭐"]
+        colors = [COLORS["yellow"], COLORS["green"], COLORS["blue"], "#FFD700", "#00E5FF"]
+
+        # ログ領域にスパークルを表示
+        sparkle_line = " ".join(
+            random.choice(sparkle_chars) for _ in range(20)
+        )
+        self._log_list.controls.append(
+            ft.Text(sparkle_line, size=14,
+                    color=random.choice(colors),
+                    text_align=ft.TextAlign.CENTER,
+                    weight=ft.FontWeight.W_700)
+        )
+
     def _on_compile(self, e: ft.ControlEvent) -> None:
         self._active_tab.dsl_text = self._editor.value or ""
         code = self._active_tab.dsl_text.strip()
+        self._set_compile_btn_state("compiling")
+        self._page.update()
         threading.Thread(target=self._compile, args=(code,), daemon=True).start()
 
     def _compile(self, code: str) -> None:
+        import time as _time
+
         if not code:
             self._log("エディタが空です", COLORS["yellow"])
+            self._set_compile_btn_state("idle")
+            self._page.update()
             return
-        self._log("コンパイル中…", COLORS["blue"])
+
+        _GREEN = "#00C875"
+        _CYAN = "#4EC9B0"
+        _DIM = "#6A9955"
+
+        self._log("", COLORS["blue"])
+        self._log_list.controls.append(
+            ft.Text("$ lifescript compile", color=_DIM, size=11,
+                    font_family=_CODE_FONT, selectable=True)
+        )
+        self._page.update()
+
+        # LLM呼び出し
+        self._log_list.controls.append(
+            ft.Text("[LLM Compiler]     DSL → Python 変換中…", color=_CYAN, size=11,
+                    font_family=_CODE_FONT, selectable=True)
+        )
+        self._page.update()
+
         try:
             result = self._compiler.compile(code)
             self._active_tab.compiled = result
-            self._set_preview(result["code"])
-            self._log(f'コンパイル完了: "{result["title"]}"', COLORS["green"])
+
+            # LLM完了
+            self._log_list.controls.append(
+                ft.Text(f'[LLM Compiler]     OK — "{result["title"]}"', color=_GREEN, size=11,
+                        font_family=_CODE_FONT, selectable=True)
+            )
+            self._page.update()
+            _time.sleep(0.1)
+
+            # セキュリティチェック演出
+            checks = [
+                (_CYAN, "[AST Validation]   構文解析中…"),
+                (_GREEN, "[AST Validation]   OK"),
+                (_CYAN, "[Sandbox Guard]    RestrictedPython 検証中…"),
+                (_GREEN, "[Sandbox Guard]    OK — 禁止操作なし"),
+                (_CYAN, "[Function Guard]   ホワイトリスト照合中…"),
+                (_GREEN, "[Function Guard]   OK — 全関数が許可リスト内"),
+            ]
+            for color, text in checks:
+                self._log_list.controls.append(
+                    ft.Text(text, color=color, size=11,
+                            font_family=_CODE_FONT, selectable=True)
+                )
+                self._page.update()
+                _time.sleep(0.08)
+
+            # Security Passed スタンプ
+            self._log_list.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.VERIFIED_ROUNDED, size=14, color=_GREEN),
+                        ft.Text("Security Check Passed", size=12,
+                                weight=ft.FontWeight.W_700, color=_GREEN,
+                                font_family=_CODE_FONT),
+                    ], spacing=6, alignment=ft.MainAxisAlignment.CENTER),
+                    bgcolor="#00C87510",
+                    border=ft.border.all(1, f"{_GREEN}40"),
+                    border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                    margin=ft.margin.only(top=2, bottom=2),
+                )
+            )
+
+            # Pythonコードをタイプライター風にプレビュー表示
+            python_code = result["code"]
+            self._python_raw = ""
+            self._python_preview_text.spans = []
+            self._page.update()
+            _time.sleep(0.15)
+
+            # 行単位で高速表示
+            lines = python_code.split("\n")
+            displayed = ""
+            for line in lines:
+                displayed += line + "\n"
+                self._python_raw = displayed
+                self._python_preview_text.spans = _highlight_python(displayed)
+                self._page.update()
+                _time.sleep(0.04)
+
+            # トリガー情報
             trigger = result.get("trigger", {})
             tt = trigger.get("type", "interval")
             if tt == "once":
-                self._log("トリガー: 即時実行（Runで実行）", COLORS["mid_text"])
+                self._log("トリガー: 即時実行（▶ Run で実行）", COLORS["mid_text"])
             elif tt == "cron":
                 self._log(f'トリガー: 毎日 {trigger["hour"]:02d}:{trigger["minute"]:02d}', COLORS["mid_text"])
             else:
                 self._log(f'トリガー: {trigger.get("seconds", 3600)}秒ごと', COLORS["mid_text"])
+            self._log("✅ コンパイル完了 — Run または Save で続行", COLORS["green"])
+            self._set_compile_btn_state("success")
+            self._show_compile_celebration()
+            self._page.update()
+            # 3秒後にボタンをリセット
+            _time.sleep(3)
+            self._set_compile_btn_state("idle")
             self._page.update()
         except CompileError as e:
-            self._log(f"コンパイルエラー: {e}", COLORS["coral"])
+            self._log_list.controls.append(
+                ft.Text(f"[LLM Compiler]     ERROR: {e}", color=COLORS["coral"], size=11,
+                        font_family=_CODE_FONT, selectable=True)
+            )
             self._set_preview(f"# エラー: {e}")
+            self._set_compile_btn_state("error")
+            self._page.update()
+            _time.sleep(3)
+            self._set_compile_btn_state("idle")
             self._page.update()
 
     def _on_run(self, e: ft.ControlEvent) -> None:

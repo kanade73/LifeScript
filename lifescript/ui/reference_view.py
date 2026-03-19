@@ -9,8 +9,8 @@ from __future__ import annotations
 import flet as ft
 
 from .app import (
-    BG, BLUE, CARD_BG, DARK_TEXT, EDITOR_BG, EDITOR_FG,
-    GREEN, LIGHT_TEXT, MID_TEXT, ORANGE, PURPLE, YELLOW, CORAL,
+    BG, BLUE, CARD_BG, CARD_SHADOW, DARK_TEXT, EDITOR_BG, EDITOR_FG,
+    GREEN, LIGHT_TEXT, MID_TEXT, ORANGE, PURPLE, YELLOW, CORAL, SHADOW_SOFT,
 )
 
 _BORDER = "#E8E4DC"
@@ -247,6 +247,114 @@ class ReferenceView:
                     '  machine_suggest("今週はバイトが多いので休息を取りましょう", reason="バイトが4回以上")',
                 ],
             },
+            {
+                "name": "weather.get",
+                "signature": "weather_get(location?) -> dict",
+                "color": BLUE,
+                "desc": "現在の天気情報を取得します。OpenWeatherMap API を使用。",
+                "params": [
+                    ("location", "str | None", '都市名（省略で "Tokyo"）'),
+                ],
+                "examples": [
+                    'w = weather_get()\nif w["condition"] == "rain":\n  notify("傘を持って！")',
+                    'w = weather_get("Osaka")\nwidget_show("天気", f\'{w["description"]} {w["temp"]}℃\')',
+                ],
+                "note": "戻り値: {condition, description, temp, feels_like, humidity, wind_speed, location}。"
+                        "conditionは 'rain', 'clear', 'clouds', 'snow' 等。",
+            },
+            {
+                "name": "time.now",
+                "signature": "time_now() -> dict",
+                "color": ORANGE,
+                "desc": "現在の日時情報を返します。条件分岐のプリミティブとして使います。",
+                "params": [
+                    ("(なし)", "", "引数なしで呼び出し"),
+                ],
+                "examples": [
+                    't = time_now()\nif t["is_morning"]:\n  notify("おはよう！")',
+                    'if time_now()["is_weekend"]:\n  notify("今日は休日！")',
+                ],
+                "note": "戻り値: {hour, minute, weekday, weekday_ja, date, time, is_morning, is_afternoon, "
+                        "is_evening, is_night, is_weekday, is_weekend}。",
+            },
+            {
+                "name": "random.pick",
+                "signature": "random_pick(items) -> object",
+                "color": CORAL,
+                "desc": "リストからランダムに1つ選んで返します。",
+                "params": [
+                    ("items", "list", "選択肢のリスト"),
+                ],
+                "examples": [
+                    'msg = random_pick(["頑張れ！", "いい調子！", "水飲んだ？"])\nnotify(msg)',
+                ],
+            },
+            {
+                "name": "random.number",
+                "signature": "random_number(low?, high?) -> int",
+                "color": CORAL,
+                "desc": "ランダムな整数を返します。",
+                "params": [
+                    ("low", "int", "下限（デフォルト: 0）"),
+                    ("high", "int", "上限（デフォルト: 100）"),
+                ],
+                "examples": [
+                    'if random_number(1, 10) == 1:\n  notify("今日はラッキーデー！")',
+                ],
+            },
+            {
+                "name": "streak.count",
+                "signature": "streak_count(habit_name) -> int",
+                "color": GREEN,
+                "desc": "指定した習慣の継続日数を返します。",
+                "params": [
+                    ("habit_name", "str", "習慣の名前"),
+                ],
+                "examples": [
+                    'if streak_count("運動") >= 7:\n  notify("1週間連続！すごい！")',
+                ],
+            },
+            {
+                "name": "streak.update",
+                "signature": "streak_update(habit_name, done?) -> int",
+                "color": GREEN,
+                "desc": "習慣の完了状況を記録します。done=Trueで+1、Falseでリセット。",
+                "params": [
+                    ("habit_name", "str", "習慣の名前"),
+                    ("done", "bool", "完了したか（デフォルト: True）"),
+                ],
+                "examples": [
+                    'streak_update("運動")',
+                    'streak_update("早起き", False)  # リセット',
+                ],
+            },
+            {
+                "name": "memory.read",
+                "signature": "memory_read(key, default?) -> object",
+                "color": PURPLE,
+                "desc": "DSLメモリからkeyの値を読み出します。スクリプト間で状態を共有できます。",
+                "params": [
+                    ("key", "str", "キー名"),
+                    ("default", "object", "未登録時のデフォルト値（省略でNone）"),
+                ],
+                "examples": [
+                    'last = memory_read("last_weather", "clear")\nif last != weather_get()["condition"]:\n  notify("天気が変わったよ！")',
+                ],
+            },
+            {
+                "name": "memory.write",
+                "signature": "memory_write(key, value) -> None",
+                "color": PURPLE,
+                "desc": "DSLメモリにkey-valueを保存します。既存のkeyは上書きされます。",
+                "params": [
+                    ("key", "str", "キー名"),
+                    ("value", "object", "保存する値（str, int, float, bool, list, dict）"),
+                ],
+                "examples": [
+                    'memory_write("last_weather", weather_get()["condition"])',
+                    'memory_write("exercise_count", streak_count("運動"))',
+                ],
+            },
         ]
 
         func_cards = []
@@ -288,7 +396,7 @@ class ReferenceView:
                         ft.Text(f["note"], size=12, color=MID_TEXT, expand=True),
                     ], spacing=6),
                     bgcolor=f"{BLUE}0A",
-                    border_radius=8,
+                    border_radius=10,
                     padding=ft.padding.symmetric(horizontal=10, vertical=8),
                 ))
 
@@ -359,6 +467,40 @@ class ReferenceView:
                     '                  reason="バイトが週4回以上")',
                     "バイトが多い週にダリーが休息を提案します。",
                 ),
+                self._example_block(
+                    "雨の日の傘リマインド",
+                    'when morning:\n'
+                    '  w = weather.get()\n'
+                    '  if w["condition"] == "rain":\n'
+                    '    notify("今日は雨だよ。傘を持って！")',
+                    "毎朝天気をチェックし、雨なら通知します。",
+                ),
+                self._example_block(
+                    "ランダム応援メッセージ",
+                    'every day:\n'
+                    '  msg = random.pick(["今日も頑張ろう！", "いい一日になるよ！", "水飲んだ？"])\n'
+                    '  notify(msg)',
+                    "毎日ランダムなメッセージで応援します。",
+                ),
+                self._example_block(
+                    "運動ストリーク追跡",
+                    'when evening:\n'
+                    '  streak.update("運動")\n'
+                    '  days = streak.count("運動")\n'
+                    '  if days % 7 == 0:\n'
+                    '    notify(f"{days}日連続！素晴らしい！")',
+                    "毎日夕方にストリークを更新し、7日ごとに祝福します。",
+                ),
+                self._example_block(
+                    "天気変化の検出（メモリ活用）",
+                    'every 3h:\n'
+                    '  w = weather.get()\n'
+                    '  last = memory.read("weather", "clear")\n'
+                    '  if w["condition"] != last:\n'
+                    '    notify(f"天気が変わりました: {w[\'description\']}")\n'
+                    '  memory.write("weather", w["condition"])',
+                    "天気が変わったタイミングで通知。memoryで前回の天気を記憶します。",
+                ),
             ],
         )
 
@@ -399,7 +541,7 @@ class ReferenceView:
                     ft.Container(
                         content=ft.Icon(icon, size=20, color=CARD_BG),
                         width=36, height=36, bgcolor=icon_color,
-                        border_radius=10, alignment=ft.Alignment(0, 0),
+                        border_radius=12, alignment=ft.Alignment(0, 0),
                     ),
                     ft.Text(title, size=18, weight=ft.FontWeight.W_700, color=DARK_TEXT),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -407,9 +549,9 @@ class ReferenceView:
                 *children,
             ], spacing=10),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=20,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     def _func_card(self, name: str, signature: str, color: str,
@@ -428,9 +570,9 @@ class ReferenceView:
                 *children,
             ], spacing=6),
             bgcolor=BG,
-            border_radius=12,
+            border_radius=14,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=SHADOW_SOFT,
         )
 
     @staticmethod
@@ -449,7 +591,7 @@ class ReferenceView:
                 font_family="Courier New", selectable=True,
             ),
             bgcolor=EDITOR_BG,
-            border_radius=10,
+            border_radius=12,
             padding=ft.padding.symmetric(horizontal=14, vertical=10),
         )
 
@@ -461,9 +603,9 @@ class ReferenceView:
                 ft.Text(desc, size=13, color=MID_TEXT),
             ], spacing=6),
             bgcolor=BG,
-            border_radius=12,
+            border_radius=14,
             padding=12,
-            border=ft.border.all(1, _BORDER),
+            shadow=SHADOW_SOFT,
         )
 
     @staticmethod

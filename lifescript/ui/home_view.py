@@ -24,6 +24,7 @@ from ..traits import gather_all_traits
 from .app import (
     CARD_BG, BLUE, GREEN, CORAL, YELLOW, DARK_TEXT, MID_TEXT, LIGHT_TEXT,
     PURPLE, ORANGE, BG, SIDEBAR_BG, EDITOR_BG, EDITOR_FG, darii_image,
+    CARD_SHADOW, SHADOW_SOFT,
 )
 
 _BORDER = "#E8E4DC"
@@ -56,19 +57,68 @@ class HomeView:
         self._is_active = False
         self._current_page = 0
         self._analyzing = False  # 分析中フラグ
+        self._last_build_time = 0  # 最後にビルドした時刻（デバウンス用）
+        self._pending_refresh = False  # リフレッシュ待機フラグ
+        # データキャッシュ（10秒間有効）
+        self._cache: dict[str, tuple[float, any]] = {}
+        self._cache_ttl = 5.0  # キャッシュ有効期間（秒）
 
     def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
         self._logs = (entries + self._logs)[:50]
         self._refresh_content()
 
     def _refresh_content(self) -> None:
-        """表示中のウィジェットを最新データで再構築する。"""
+        """表示中のウィジェットを最新データで再構築する。
+        
+        デバウンス処理により、短時間での連続更新を防ぐ。
+        """
         if self._content_container is not None and self._is_active:
+            import time
+            current_time = time.time()
+            
+            # 最後のビルドから0.5秒以内なら待機
+            if current_time - self._last_build_time < 0.5:
+                if not self._pending_refresh:
+                    self._pending_refresh = True
+                    # 0.5秒後に再実行
+                    threading.Timer(0.5, self._execute_pending_refresh).start()
+                return
+            
             try:
+                self._last_build_time = current_time
                 self._content_container.content = self._build_content()
                 self._page.update()
             except Exception:
                 pass
+    
+    def _execute_pending_refresh(self) -> None:
+        """待機中のリフレッシュを実行する。"""
+        if self._pending_refresh:
+            self._pending_refresh = False
+            self._refresh_content()
+    
+    def _get_cached(self, key: str, fetch_func: callable) -> any:
+        """キャッシュから取得、期限切れなら再取得。
+        
+        Args:
+            key: キャッシュキー
+            fetch_func: データ取得関数
+        
+        Returns:
+            キャッシュされたデータまたは新規取得したデータ
+        """
+        import time
+        current_time = time.time()
+        
+        if key in self._cache:
+            cached_time, cached_value = self._cache[key]
+            if current_time - cached_time < self._cache_ttl:
+                return cached_value
+        
+        # キャッシュミスまたは期限切れ → 新規取得
+        value = fetch_func()
+        self._cache[key] = (current_time, value)
+        return value
 
     def _start_refresh_timer(self) -> None:
         """定期リフレッシュ（10秒ごと）。"""
@@ -125,12 +175,15 @@ class HomeView:
 
         active_count = len(self._scheduler.get_active_ids())
 
+        # ── ダリーの一言 ──────────────────────────────────────
+        darii_message = self._get_darii_message(hour, active_count)
+
         header = ft.Container(
             content=ft.Row([
                 ft.Container(
                     content=ft.Icon(greeting_icon, size=28, color=CARD_BG),
                     width=48, height=48, bgcolor=greeting_color,
-                    border_radius=14, alignment=ft.Alignment(0, 0),
+                    border_radius=16, alignment=ft.Alignment(0, 0),
                     shadow=ft.BoxShadow(
                         spread_radius=0, blur_radius=16,
                         color=f"{greeting_color}33", offset=ft.Offset(0, 4),
@@ -147,6 +200,20 @@ class HomeView:
                         ),
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ], spacing=2),
+                ft.Container(width=12),
+                # ダリーの吹き出し（横に配置）
+                darii_image(28),
+                ft.Container(
+                    content=ft.Text(
+                        darii_message, size=12, color=DARK_TEXT,
+                        weight=ft.FontWeight.W_500,
+                    ),
+                    bgcolor="#FFF9F0",  # パステルイエロー（クリーム色）
+                    border=ft.border.all(1, "#F5E6D3"),  # 柔らかいボーダー
+                    border_radius=14,
+                    padding=ft.padding.symmetric(horizontal=14, vertical=8),
+                    shadow=SHADOW_SOFT,
+                ),
                 ft.Container(expand=True),
                 ft.IconButton(
                     ft.Icons.PSYCHOLOGY_ROUNDED, icon_size=20, icon_color=LIGHT_TEXT,
@@ -178,8 +245,9 @@ class HomeView:
                                 color=DARK_TEXT if i == self._current_page else LIGHT_TEXT),
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     bgcolor=YELLOW if i == self._current_page else ft.Colors.TRANSPARENT,
-                    border_radius=10,
+                    border_radius=14,
                     padding=ft.padding.symmetric(horizontal=14, vertical=6),
+                    shadow=SHADOW_SOFT if i == self._current_page else None,
                     on_click=lambda e, idx=i: _switch_page(idx),
                     ink=True,
                 )
@@ -209,13 +277,15 @@ class HomeView:
                 ], expand=7, spacing=0, scroll=ft.ScrollMode.AUTO),
             ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
         else:
-            # ウィジェットページ: 通知 + Gmail + 動的ウィジェット群
+            # ウィジェットページ: システムモニタ + 通知 + Gmail + 動的ウィジェット群
             notification_widget = self._widget_notifications()
+            system_widget = self._widget_system_monitor()
             gmail_widget = self._widget_gmail()
             dynamic_widgets = self._build_dynamic_widgets()
 
-            left_items: list[ft.Control] = []
+            left_items: list[ft.Control] = [system_widget]
             if gmail_widget:
+                left_items.append(ft.Container(height=10))
                 left_items.append(gmail_widget)
             for dw in dynamic_widgets:
                 if left_items:
@@ -233,7 +303,7 @@ class HomeView:
                         ),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                     padding=40, alignment=ft.Alignment(0, 0),
-                    bgcolor=CARD_BG, border_radius=16, border=ft.border.all(1, _BORDER),
+                    bgcolor=CARD_BG, border_radius=20, shadow=CARD_SHADOW,
                 ))
 
             right_items: list[ft.Control] = [notification_widget]
@@ -249,6 +319,56 @@ class HomeView:
             ft.Container(height=6),
             page_content,
         ], expand=True, spacing=0)
+
+    # ==================================================================
+    # ダリーの一言
+    # ==================================================================
+    def _get_darii_message(self, hour: int, active_count: int) -> str:
+        """時間帯・状況に応じたダリーの一言を返す。"""
+        import random
+        try:
+            logs = db_client.get_machine_logs(limit=30)
+            suggestion_count = sum(
+                1 for l in logs
+                if l.get("action_type") in ("calendar_suggest", "general_suggest")
+            )
+            today_events = len(db_client.get_events(
+                start_from=datetime.now(_JST).replace(hour=0, minute=0, second=0).isoformat(),
+                start_to=datetime.now(_JST).replace(hour=23, minute=59, second=59).isoformat(),
+            ))
+        except Exception:
+            suggestion_count = 0
+            today_events = 0
+
+        # 状況に応じたメッセージ
+        messages: list[str] = []
+
+        if suggestion_count > 0:
+            messages.append(f"提案が {suggestion_count} 件あるよ。チェックしてみて！")
+        if today_events > 0:
+            messages.append(f"今日は予定が {today_events} 件。頑張ろうね")
+        if active_count == 0:
+            messages.append("まだスクリプトがないよ。IDEで書いてみよう！")
+        elif active_count >= 3:
+            messages.append(f"{active_count} 件のルールで見守ってるよ")
+
+        # 時間帯別
+        if hour < 6:
+            messages.append("こんな時間まで起きてるの？早く寝なきゃ")
+        elif hour < 9:
+            messages.append("朝の時間を大切にしよう")
+        elif hour < 12:
+            messages.append("午前中は集中力が高いよ")
+        elif hour < 14:
+            messages.append("お昼ご飯は食べた？")
+        elif hour < 18:
+            messages.append("午後もあと少し！")
+        elif hour < 21:
+            messages.append("お疲れ様。今日はどうだった？")
+        else:
+            messages.append("そろそろ休む準備をしようか")
+
+        return random.choice(messages)
 
     # ==================================================================
     # メモリダイアログ（パーソナリティ管理）
@@ -277,9 +397,9 @@ class HomeView:
                             ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, size=14, color=PURPLE),
                             ft.Text(trait, size=13, color=DARK_TEXT, expand=True),
                         ], spacing=6),
-                        bgcolor=CARD_BG, border_radius=10,
+                        bgcolor=CARD_BG, border_radius=14,
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        border=ft.border.all(1, _BORDER),
+                        shadow=SHADOW_SOFT,
                     ))
 
             # マシンの観察 + 手動メモリ
@@ -313,9 +433,9 @@ class HomeView:
                                 on_click=lambda e, lid=log_id: _delete(lid),
                             ),
                         ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
-                        bgcolor=CARD_BG, border_radius=10,
+                        bgcolor=CARD_BG, border_radius=14,
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        border=ft.border.all(1, _BORDER),
+                        shadow=SHADOW_SOFT,
                     ))
 
             if memories:
@@ -345,9 +465,9 @@ class HomeView:
                                 on_click=lambda e, lid=log_id: _delete(lid),
                             ),
                         ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
-                        bgcolor=CARD_BG, border_radius=10,
+                        bgcolor=CARD_BG, border_radius=14,
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        border=ft.border.all(1, _BORDER),
+                        shadow=SHADOW_SOFT,
                     ))
 
             if not traits and not memories and not auto_memories:
@@ -482,8 +602,9 @@ class HomeView:
                         content=ft.Text(h_str, size=52, weight=ft.FontWeight.W_300,
                                         color=DARK_TEXT, font_family="Courier New"),
                         bgcolor=CARD_BG,
-                        border_radius=14,
+                        border_radius=18,
                         padding=ft.padding.symmetric(horizontal=16, vertical=4),
+                        shadow=SHADOW_SOFT,
                     ),
                     # コロン
                     ft.Column([
@@ -496,8 +617,9 @@ class HomeView:
                         content=ft.Text(m_str, size=52, weight=ft.FontWeight.W_300,
                                         color=DARK_TEXT, font_family="Courier New"),
                         bgcolor=CARD_BG,
-                        border_radius=14,
+                        border_radius=18,
                         padding=ft.padding.symmetric(horizontal=16, vertical=4),
+                        shadow=SHADOW_SOFT,
                     ),
                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=12,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -508,13 +630,14 @@ class HomeView:
                     bgcolor=CARD_BG,
                     border_radius=20,
                     padding=ft.padding.symmetric(horizontal=16, vertical=6),
+                    shadow=SHADOW_SOFT,
                 ),
             ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor=f"{accent}15",
-            border_radius=16,
+            border_radius=22,
             padding=ft.padding.symmetric(vertical=20, horizontal=20),
             alignment=ft.Alignment(0, 0),
-            border=ft.border.all(1, f"{accent}30"),
+            shadow=CARD_SHADOW,
         )
 
     # ==================================================================
@@ -656,7 +779,7 @@ class HomeView:
                         bgcolor=f"{BLUE}0A" if is_today else ft.Colors.TRANSPARENT,
                         border_radius=8,
                         padding=ft.padding.only(left=3, top=2, right=2, bottom=2),
-                        border=ft.border.all(1, f"{BLUE}30" if is_today else "#F0EDE6"),
+                        border=ft.border.all(1, f"{BLUE}30" if is_today else "#F0EDE600"),
                         on_click=lambda e, d=day, evs=day_full_events: self._show_day_dialog(year, month, d, evs),
                         ink=True,
                     ))
@@ -667,9 +790,9 @@ class HomeView:
                 nav, wk, *rows,
             ], spacing=3),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     # ==================================================================
@@ -794,9 +917,9 @@ class HomeView:
                 items_view,
             ], spacing=4),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     # ==================================================================
@@ -938,7 +1061,7 @@ class HomeView:
                 padding=ft.padding.symmetric(vertical=4, horizontal=8),
                 bgcolor="#FFFBF0",
                 border=ft.border.all(1, "#F0E8D8"),
-                border_radius=10,
+                border_radius=14,
                 on_click=lambda e, idx=i: _select_suggestion(idx),
                 ink=True,
             )
@@ -1047,9 +1170,9 @@ class HomeView:
                 *observations_section,
             ], spacing=4),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     def _go_machine_with_context(self, entry: dict | None) -> None:
@@ -1153,9 +1276,69 @@ class HomeView:
                 *items,
             ], spacing=6),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
+        )
+
+    # ==================================================================
+    # Widget: システムモニタ（CPU / メモリ）
+    # ==================================================================
+    def _widget_system_monitor(self) -> ft.Container:
+        from ..functions.device import device_cpu, device_memory, device_info
+
+        cpu = device_cpu()
+        mem = device_memory()
+        info = device_info()
+
+        def _bar(label: str, percent: float, color: str) -> ft.Control:
+            return ft.Column([
+                ft.Row([
+                    ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                    ft.Text(f"{percent:.0f}%", size=12, weight=ft.FontWeight.W_700, color=color),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            expand=max(int(percent), 1),
+                            height=6,
+                            bgcolor=color,
+                            border_radius=3,
+                        ),
+                        ft.Container(
+                            expand=max(int(100 - percent), 1),
+                            height=6,
+                            bgcolor=f"{color}20",
+                            border_radius=3,
+                        ),
+                    ], spacing=0),
+                ),
+            ], spacing=4)
+
+        cpu_color = GREEN if cpu < 50 else (ORANGE if cpu < 80 else CORAL)
+        mem_color = GREEN if mem["percent"] < 60 else (ORANGE if mem["percent"] < 85 else CORAL)
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.MONITOR_HEART_ROUNDED, size=18, color=BLUE),
+                    ft.Text("システムモニタ", size=14, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    ft.Container(expand=True),
+                    ft.Text(f"{info['os']} · CPU×{info['cpu_count']}",
+                            size=11, color=LIGHT_TEXT),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                _bar("CPU", cpu, cpu_color),
+                _bar("メモリ", mem["percent"],  mem_color),
+                ft.Text(
+                    f"{mem['used_gb']}GB / {mem['total_gb']}GB 使用中",
+                    size=11, color=LIGHT_TEXT,
+                ),
+            ], spacing=8),
+            padding=16,
+            bgcolor=CARD_BG,
+            border_radius=20,
+            shadow=CARD_SHADOW,
         )
 
     # ==================================================================
@@ -1216,9 +1399,9 @@ class HomeView:
                 items_view,
             ], spacing=4),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=14,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     # ==================================================================
@@ -1299,9 +1482,9 @@ class HomeView:
                     ),
                 ], spacing=4),
                 bgcolor=CARD_BG,
-                border_radius=16,
+                border_radius=20,
                 padding=14,
-                border=ft.border.all(1, _BORDER),
+                shadow=CARD_SHADOW,
                 on_click=lambda e, n=widget_name, c=content, t=triggered,
                                 lid=log_id: self._show_detail(
                     n, [("内容", c), ("更新日時", t)], BLUE,
@@ -1376,8 +1559,8 @@ class HomeView:
                     ),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=ft.padding.symmetric(vertical=4, horizontal=4),
-                border=ft.border.all(1, _BORDER),
-                border_radius=10,
+                shadow=SHADOW_SOFT,
+                border_radius=12,
             )
             event_rows.append(row)
 
