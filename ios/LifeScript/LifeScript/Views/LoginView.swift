@@ -101,6 +101,6 @@ struct LoginView: View {
             Spacer()
             Spacer()
         }
-        .background(Color(hex: "FAFAF8"))
+        .background(Color(hex: "F2F0EB"))
     }
 }

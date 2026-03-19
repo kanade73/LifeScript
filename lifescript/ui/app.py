@@ -41,6 +41,20 @@ COLORS = {
     "light_text": LIGHT_TEXT,
 }
 
+# ── Shared shadow presets ─────────────────────────────────────────
+CARD_SHADOW = ft.BoxShadow(
+    spread_radius=0, blur_radius=12,
+    color="#0000000A", offset=ft.Offset(0, 2),
+)
+CARD_SHADOW_HOVER = ft.BoxShadow(
+    spread_radius=0, blur_radius=20,
+    color="#00000012", offset=ft.Offset(0, 4),
+)
+SHADOW_SOFT = ft.BoxShadow(
+    spread_radius=0, blur_radius=8,
+    color="#00000008", offset=ft.Offset(0, 1),
+)
+
 
 def _resolve_asset(name: str) -> str:
     """アセット画像のパスを解決する。パッケージ/開発両対応。"""
@@ -53,11 +67,18 @@ def _resolve_asset(name: str) -> str:
 
 
 DARII_IMG = _resolve_asset("darii.png")
+LOGO_IMG = _resolve_asset("lifescript_logo.svg")
 
 
 def darii_image(size: int) -> ft.Image:
     """ダリーの画像コントロールを返す。"""
     return ft.Image(src=DARII_IMG, width=size, height=size, fit="contain")
+
+
+def logo_image(width: int = 160) -> ft.Image:
+    """LifeScript ロゴ（ダリー + テキスト統合SVG）を返す。"""
+    height = int(width * 123 / 432)  # SVGアスペクト比 432:123
+    return ft.Image(src=LOGO_IMG, width=width, height=height, fit="contain")
 
 
 def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
@@ -209,7 +230,11 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 expand=True,
                 bgcolor=BG,
                 padding=ft.padding.only(top=8, left=8, right=8, bottom=0),
-                border_radius=ft.border_radius.only(top_left=16),
+                border_radius=ft.border_radius.only(top_left=24),
+                shadow=ft.BoxShadow(
+                    spread_radius=0, blur_radius=24,
+                    color="#00000010", offset=ft.Offset(-2, 0),
+                ),
             )
 
             # ── Sidebar navigation (常時展開) ─────────────────────
@@ -229,12 +254,15 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                 is_active = index == _nav_index[0]
                 return ft.Container(
                     content=ft.Row([
-                        ft.Icon(icon, size=22, color=DARK_TEXT),
-                        ft.Text(label, size=13, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                        ft.Icon(icon, size=22, color=DARK_TEXT if is_active else MID_TEXT),
+                        ft.Text(label, size=13,
+                                weight=ft.FontWeight.W_700 if is_active else ft.FontWeight.W_500,
+                                color=DARK_TEXT if is_active else MID_TEXT),
                     ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     bgcolor=YELLOW if is_active else ft.Colors.TRANSPARENT,
-                    border_radius=12,
+                    border_radius=14,
                     padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    shadow=SHADOW_SOFT if is_active else None,
                     on_click=lambda e, idx=index: _on_nav(idx),
                     ink=True,
                 )
@@ -249,17 +277,10 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
                 sidebar_column.controls = [
                     ft.Container(
-                        content=ft.Row([
-                            ft.Container(
-                                content=darii_image(32),
-                                width=36, height=36,
-                                border_radius=10, alignment=ft.Alignment(0, 0),
-                            ),
-                            ft.Text("LifeScript", size=14, weight=ft.FontWeight.W_800, color=DARK_TEXT),
-                        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=ft.padding.only(left=4),
+                        content=logo_image(width=230),
+                        padding=ft.padding.only(left=2, top=4),
                     ),
-                    ft.Container(height=12),
+                    ft.Container(height=8),
                     *[_build_nav_row(i) for i in range(len(nav_items))],
                     ft.Container(expand=True),
                     # ユーザー情報 + ログアウト
@@ -309,7 +330,7 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
             activity_bar = ft.Container(
                 content=sidebar_column,
-                width=200,
+                width=220,
                 bgcolor=SIDEBAR_BG,
                 padding=ft.padding.symmetric(vertical=12, horizontal=8),
             )
@@ -321,8 +342,9 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                     [ft.Icon(ft.Icons.CIRCLE, size=8, color=GREEN), ft.Text("Scheduler", size=11, color=MID_TEXT)],
                     spacing=4,
                 ),
-                bgcolor=CARD_BG, border_radius=10,
+                bgcolor=CARD_BG, border_radius=12,
                 padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                shadow=SHADOW_SOFT,
             )
 
             status_bar = ft.Container(
@@ -331,13 +353,15 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                         scheduler_badge,
                         ft.Container(
                             content=ft.Text(f"DB: {db_label}", size=11, color=MID_TEXT),
-                            bgcolor=CARD_BG, border_radius=10,
+                            bgcolor=CARD_BG, border_radius=12,
                             padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                            shadow=SHADOW_SOFT,
                         ),
                         ft.Container(
                             content=ft.Text("API: :8000", size=11, color=MID_TEXT),
-                            bgcolor=CARD_BG, border_radius=10,
+                            bgcolor=CARD_BG, border_radius=12,
                             padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                            shadow=SHADOW_SOFT,
                         ),
                         ft.Container(expand=True),
                         ft.Text("LifeScript v0.2", size=11, color=LIGHT_TEXT),
@@ -345,8 +369,9 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
                     spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                height=32, bgcolor=SIDEBAR_BG,
+                height=36, bgcolor=SIDEBAR_BG,
                 padding=ft.padding.symmetric(horizontal=16),
+                border=ft.border.only(top=ft.BorderSide(1, "#E8E4DC")),
             )
 
             # ── Page layout ──────────────────────────────────────

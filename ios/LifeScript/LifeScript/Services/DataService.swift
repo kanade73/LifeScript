@@ -226,6 +226,8 @@ class DataService: ObservableObject {
             guard let jsonRange = log.content.range(of: #"(?<=<!--meta:).*?(?=-->)"#, options: .regularExpression),
                   let data = String(log.content[jsonRange]).data(using: .utf8),
                   let meta = try? JSONDecoder().decode(SuggestionMeta.self, from: data) else {
+                // メタデータ解析失敗 → 提案を削除して終了
+                await dismissSuggestion(log)
                 return
             }
 

@@ -6,7 +6,7 @@ import flet as ft
 
 from .. import google_auth
 from .app import (
-    BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE,
+    BG, CARD_BG, CARD_SHADOW, BLUE, GREEN, CORAL, YELLOW, ORANGE,
     DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG,
 )
 
@@ -135,7 +135,7 @@ class SettingsView:
                         ),
                     ]),
                     bgcolor="#FFF9EC",
-                    border_radius=10,
+                    border_radius=14,
                     padding=14,
                     border=ft.border.all(1, "#F0E8D0"),
                 ),
@@ -146,7 +146,7 @@ class SettingsView:
                 ft.Row([
                     ft.Container(
                         content=ft.Icon(ft.Icons.MAIL_ROUNDED, size=20, color=CARD_BG),
-                        width=36, height=36, bgcolor="#EA4335", border_radius=10,
+                        width=36, height=36, bgcolor="#EA4335", border_radius=12,
                         alignment=ft.Alignment(0, 0),
                     ),
                     ft.Container(width=8),
@@ -163,9 +163,9 @@ class SettingsView:
                 ft.Row(buttons, spacing=8) if buttons else ft.Container(),
             ], spacing=0),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=20,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     def _feature_row(self, icon: str, title: str, desc: str) -> ft.Container:
@@ -193,9 +193,9 @@ class SettingsView:
                 ft.Text("あなたの生活に寄り添うロボット「ダリー」", size=13, color=MID_TEXT),
             ], spacing=0),
             bgcolor=CARD_BG,
-            border_radius=16,
+            border_radius=20,
             padding=20,
-            border=ft.border.all(1, _BORDER),
+            shadow=CARD_SHADOW,
         )
 
     # ------------------------------------------------------------------

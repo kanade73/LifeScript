@@ -12,6 +12,7 @@ dependencies = [
     "RestrictedPython>=7.1",
     "python-dotenv>=1.0.0",
     "supabase>=2.0.0",
+    "psutil>=5.9.0",
 ]
 
 [project.scripts]

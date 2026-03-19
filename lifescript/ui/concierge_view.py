@@ -16,7 +16,8 @@ from ..traits import gather_all_traits
 from ..database.client import db_client
 from .app import (
     BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE, PURPLE,
-    DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG, darii_image,
+    DARK_TEXT, MID_TEXT, LIGHT_TEXT, SIDEBAR_BG, CARD_SHADOW, SHADOW_SOFT,
+    darii_image,
 )
 
 _BORDER = "#E8E4DC"
@@ -44,7 +45,7 @@ class ConciergeView:
         self._input = ft.TextField(
             hint_text="ダリーに話しかけてね…",
             text_size=14,
-            border_radius=24,
+            border_radius=28,
             bgcolor=CARD_BG,
             border_color=_BORDER,
             focused_border_color=BLUE,
@@ -277,9 +278,9 @@ class ConciergeView:
                 *actions,
             ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
             bgcolor=CARD_BG,
-            border_radius=10,
+            border_radius=14,
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
-            border=ft.border.all(1, _BORDER),
+            shadow=SHADOW_SOFT,
         )
 
     def _on_add_memory(self, e: ft.ControlEvent) -> None:
@@ -448,7 +449,8 @@ class ConciergeView:
         return ft.Container(
             content=ft.Column(items, spacing=4),
             bgcolor=f"{BLUE}08",
-            border_radius=16,
+            border_radius=20,
+            shadow=SHADOW_SOFT,
             padding=16,
             border=ft.border.all(1, f"{BLUE}20"),
             margin=ft.margin.only(right=40),
@@ -459,7 +461,8 @@ class ConciergeView:
             content=ft.Text(text, size=14, color=CARD_BG),
             bgcolor=BLUE,
             border_radius=ft.border_radius.only(
-                top_left=16, top_right=16, bottom_left=16, bottom_right=4),
+                top_left=20, top_right=20, bottom_left=20, bottom_right=6),
+            shadow=SHADOW_SOFT,
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
             margin=ft.margin.only(left=80),
         )
@@ -539,10 +542,10 @@ class ConciergeView:
             content=ft.Column(controls, spacing=8),
             bgcolor=CARD_BG,
             border_radius=ft.border_radius.only(
-                top_left=16, top_right=16, bottom_left=4, bottom_right=16),
+                top_left=20, top_right=20, bottom_left=6, bottom_right=20),
+            shadow=CARD_SHADOW,
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
             margin=ft.margin.only(right=40),
-            border=ft.border.all(1, _BORDER),
         )
 
     def _action_bubble(self, action: dict) -> ft.Container:
@@ -559,7 +562,7 @@ class ConciergeView:
                         weight=ft.FontWeight.W_500),
             ], spacing=8),
             bgcolor=bg,
-            border_radius=12,
+            border_radius=16,
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
             border=ft.border.all(1, color),
             margin=ft.margin.only(right=40),
@@ -582,7 +585,7 @@ class ConciergeView:
                 ft.Text(f"エラー: {msg}", size=13, color=CORAL, expand=True),
             ], spacing=8),
             bgcolor="#FFF0F0",
-            border_radius=12,
+            border_radius=16,
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
             border=ft.border.all(1, CORAL),
         )

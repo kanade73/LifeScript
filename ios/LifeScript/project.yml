@@ -17,6 +17,12 @@ targets:
     platform: iOS
     sources:
       - LifeScript
+    entitlements:
+      path: LifeScript/LifeScript.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access:
+          - health-records
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -25,6 +31,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "ダリーがあなたの歩数と睡眠データを読み取り、生活の文脈を理解するために使用します。"
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "LifeScriptは健康データの書き込みは行いません。"
         MARKETING_VERSION: "0.2"
         CURRENT_PROJECT_VERSION: 1
         CODE_SIGN_STYLE: Automatic

@@ -301,9 +301,13 @@ class ContextAnalyzer:
 
             from .functions.gmail import gmail_unread
             unread = gmail_unread(limit=5)
-            if not unread or unread == "未読メールはありません。":
+            if not unread:
                 return "（未読メールなし）"
-            return f"### 未読メール（最新5件）\n{unread}"
+            # list[dict] → テキスト化
+            lines = []
+            for m in unread:
+                lines.append(f"- {m.get('subject', '(件名なし)')} from {m.get('from', '?')} ({m.get('date', '')})")
+            return f"### 未読メール（最新{len(unread)}件）\n" + "\n".join(lines)
         except Exception:
             return "（メール取得エラー）"
 

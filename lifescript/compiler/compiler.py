@@ -49,12 +49,55 @@ LifeScript の DSL は YAML 風の宣言的記法です:
 | `machine.analyze()` | `machine_analyze()` |
 | `machine.suggest("message")` | `machine_suggest("message")` |
 | `machine.suggest("message", reason="理由")` | `machine_suggest("message", reason="理由")` |
+| `device.cpu()` | `device_cpu()` |
+| `device.memory()` | `device_memory()` |
+| `device.info()` | `device_info()` |
+| `weather.get()` | `weather_get()` |
+| `weather.get("Osaka")` | `weather_get("Osaka")` |
+| `time.now()` | `time_now()` |
+| `random.pick([...])` | `random_pick([...])` |
+| `random.number(1, 10)` | `random_number(1, 10)` |
+| `streak.count("運動")` | `streak_count("運動")` |
+| `streak.update("運動", True)` | `streak_update("運動", True)` |
+| `memory.read("key")` | `memory_read("key")` |
+| `memory.read("key", 0)` | `memory_read("key", 0)` |
+| `memory.write("key", value)` | `memory_write("key", value)` |
+| `math.calc("1+1")` | `math_calc("1+1")` |
+| `math.calc("3*4+2")` | `math_calc("3*4+2")` |
+| `math.round(3.14159, 2)` | `math_round(3.14159, 2)` |
+| `date.diff("2026-04-01")` | `date_diff("2026-04-01")` |
+| `date.diff("2026-04-01", "2026-03-01")` | `date_diff("2026-04-01", "2026-03-01")` |
+| `list.join(["A","B","C"])` | `list_join(["A","B","C"])` |
+| `list.join(items, "、")` | `list_join(items, "、")` |
+| `list.count(items, "x")` | `list_count(items, "x")` |
+| `translate("Hello", "ja")` | `translate("Hello", "ja")` |
+| `translate(text, "en")` | `translate(text, "en")` |
+| `summarize(text)` | `summarize(text)` |
+| `summarize(text, 5)` | `summarize(text, 5)` |
+| `qr.generate("https://example.com")` | `qr_generate("https://example.com")` |
+| `qr.generate(data, 300)` | `qr_generate(data, 300)` |
+| `sound.play()` | `sound_play()` |
+| `sound.play("success")` | `sound_play("success")` |
+
+**重要**: DSL ではドット記法（例: `calendar.add()`）を使いますが、Python ではアンダースコア記法（例: `calendar_add()`）に変換してください。
 
 自然言語で書かれたルールも Python に変換してください。
 例: 「バイトが週4以上なら回復タイムを提案」→ if calendar_read(keyword="バイト").count_this_week >= 4: calendar_suggest(...)
 例: 「このサイトを毎日まとめて」→ result = web_fetch("url"); widget_show("サイト名", result)
 例: 「カレンダーとメールを分析して提案して」→ machine_analyze()
 例: 「今日は早く寝ようと提案して」→ machine_suggest("今日は早めに寝ましょう！", reason="明日の予定に備えて")
+例: 「CPUが80%超えたら通知」→ if device_cpu() > 80: notify("CPU使用率が高いです")
+例: 「雨なら傘を持っていけと通知」→ w = weather_get(); if w["condition"] == "rain": notify("傘を持って！")
+例: 「朝なら挨拶を通知」→ t = time_now(); if t["is_morning"]: notify("おはよう！")
+例: 「ランダムに応援メッセージ」→ msg = random_pick(["頑張れ！", "いい調子！", "水飲んだ？"]); notify(msg)
+例: 「運動7日連続なら褒めて」→ if streak_count("運動") >= 7: notify("1週間継続おめでとう！")
+例: 「前回の天気を記録」→ w = weather_get(); memory_write("last_weather", w["condition"])
+例: 「1+2*3を計算して通知」→ result = math_calc("1+2*3"); notify(f"計算結果: {result}")
+例: 「4月1日まであと何日か通知」→ days = date_diff("2026-04-01"); notify(f"4月1日まであと{days}日")
+例: 「英語に翻訳して通知」→ result = translate("こんにちは", "en"); notify(result)
+例: 「このページを要約して」→ text = web_fetch(url, summary=False); result = summarize(text); widget_show("要約", result)
+例: 「URLのQRコードを生成」→ url = qr_generate("https://example.com"); notify(f"QRコード: {url}")
+例: 「成功音を鳴らして」→ sound_play("success")
 
 ## トリガー（実行タイミング）
 

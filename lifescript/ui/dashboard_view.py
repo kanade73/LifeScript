@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import flet as ft
 
 from ..database.client import db_client
-from .app import COLORS
+from .app import CARD_SHADOW, COLORS, SHADOW_SOFT
 
 _JST = timezone(timedelta(hours=9))
 
@@ -66,7 +66,7 @@ class DashboardView:
             bgcolor=COLORS["card_bg"],
             border_radius=16,
             padding=14,
-            border=ft.border.all(1, "#E8E4DC"),
+            shadow=CARD_SHADOW,
         )
 
         # ── Machine logs ─────────────────────────────────────
@@ -81,7 +81,7 @@ class DashboardView:
             bgcolor=COLORS["card_bg"],
             border_radius=16,
             padding=14,
-            border=ft.border.all(1, "#E8E4DC"),
+            shadow=CARD_SHADOW,
         )
 
         # ── Live logs ─────────────────────────────────────────
@@ -97,7 +97,7 @@ class DashboardView:
                     content=self._log_list,
                     expand=True,
                     bgcolor=COLORS["editor_bg"],
-                    border_radius=10,
+                    border_radius=12,
                     padding=10,
                 ),
             ], spacing=6, expand=True),
@@ -105,12 +105,33 @@ class DashboardView:
             bgcolor=COLORS["card_bg"],
             border_radius=16,
             padding=12,
-            border=ft.border.all(1, "#E8E4DC"),
+            shadow=CARD_SHADOW,
         )
+
+        # ── 週間カレンダーグラフ + スケジューラタイムライン ──
+        self._week_graph = ft.Container(
+            content=ft.Column([], spacing=4),
+            bgcolor=COLORS["card_bg"],
+            border_radius=16,
+            padding=14,
+            shadow=CARD_SHADOW,
+            expand=True,
+        )
+        self._scheduler_timeline = ft.Container(
+            content=ft.Column([], spacing=4),
+            bgcolor=COLORS["card_bg"],
+            border_radius=16,
+            padding=14,
+            shadow=CARD_SHADOW,
+            expand=True,
+        )
+
+        graph_row = ft.Row([self._week_graph, self._scheduler_timeline], spacing=12)
 
         self._content = ft.Column([
             ft.Text("Dashboard", size=22, weight=ft.FontWeight.W_700, color=COLORS["dark_text"]),
             status_row,
+            graph_row,
             ft.Row([automation_section, machine_logs_section], expand=True, spacing=12),
             log_panel,
         ], expand=True, spacing=16)
@@ -131,7 +152,7 @@ class DashboardView:
                 ft.Container(
                     content=ft.Icon(icon, size=20, color=COLORS["card_bg"]),
                     width=40, height=40, bgcolor=accent,
-                    border_radius=12, alignment=ft.Alignment(0, 0),
+                    border_radius=14, alignment=ft.Alignment(0, 0),
                 ),
                 ft.Column([
                     ft.Text(label, size=11, color=COLORS["light_text"], weight=ft.FontWeight.W_500),
@@ -139,9 +160,9 @@ class DashboardView:
                 ], spacing=2),
             ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             bgcolor=COLORS["card_bg"],
-            border_radius=16,
+            border_radius=20,
             padding=ft.padding.symmetric(horizontal=20, vertical=14),
-            border=ft.border.all(1, "#E8E4DC"),
+            shadow=CARD_SHADOW,
             expand=True,
         )
 
@@ -233,8 +254,9 @@ class DashboardView:
                             *actions,
                         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                         bgcolor=COLORS["bg"],
-                        border_radius=12,
+                        border_radius=14,
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        shadow=SHADOW_SOFT,
                     )
                     self._automation_list.controls.append(tile)
         except Exception:
@@ -385,6 +407,7 @@ class DashboardView:
     # ------------------------------------------------------------------
     def _refresh_all(self) -> None:
         self._refresh_status()
+        self._refresh_graphs()
         self._refresh_automations()
         self._refresh_machine_logs()
 
@@ -434,6 +457,135 @@ class DashboardView:
             db_label, db_color = "Not connected", COLORS["light_text"]
         val4.controls[1] = ft.Text(db_label, size=15, color=db_color, weight=ft.FontWeight.W_700)
 
+    def _refresh_graphs(self) -> None:
+        """週間イベントグラフ + スケジューラタイムラインを更新。"""
+        # ── 週間イベント棒グラフ ──
+        try:
+            now = datetime.now(_JST)
+            start = now - timedelta(days=now.weekday())
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            day_labels = ["月", "火", "水", "木", "金", "土", "日"]
+            day_counts = []
+            max_count = 1
+
+            for i in range(7):
+                day_start = start + timedelta(days=i)
+                day_end = day_start + timedelta(days=1)
+                events = db_client.get_events(
+                    start_from=day_start.isoformat(),
+                    start_to=day_end.isoformat(),
+                )
+                count = len(events)
+                day_counts.append(count)
+                if count > max_count:
+                    max_count = count
+
+            today_idx = now.weekday()
+            bars = []
+            for i, (label, count) in enumerate(zip(day_labels, day_counts)):
+                bar_height = max(4, int(60 * count / max_count)) if count > 0 else 4
+                is_today = i == today_idx
+                bar_color = COLORS["yellow"] if is_today else COLORS["blue"]
+
+                bars.append(ft.Column([
+                    ft.Text(str(count) if count > 0 else "", size=10, color=COLORS["mid_text"],
+                            text_align=ft.TextAlign.CENTER, weight=ft.FontWeight.W_600),
+                    ft.Container(
+                        width=28, height=bar_height,
+                        bgcolor=bar_color, border_radius=6,
+                    ),
+                    ft.Text(label, size=11, color=COLORS["dark_text"] if is_today else COLORS["mid_text"],
+                            weight=ft.FontWeight.W_700 if is_today else ft.FontWeight.W_400),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2,
+                    alignment=ft.MainAxisAlignment.END))
+
+            self._week_graph.content = ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.BAR_CHART_ROUNDED, size=16, color=COLORS["blue"]),
+                    ft.Text("今週のイベント数", size=13, weight=ft.FontWeight.W_700,
+                            color=COLORS["dark_text"]),
+                ], spacing=6),
+                ft.Container(
+                    content=ft.Row(bars, alignment=ft.MainAxisAlignment.SPACE_AROUND,
+                                   vertical_alignment=ft.CrossAxisAlignment.END),
+                    height=100,
+                    padding=ft.padding.only(top=8),
+                ),
+            ], spacing=8)
+        except Exception:
+            self._week_graph.content = ft.Text("グラフ読み込みエラー", size=12, color=COLORS["light_text"])
+
+        # ── スケジューラタイムライン ──
+        try:
+            scripts = db_client.get_scripts()
+            active_ids = self._scheduler.get_active_ids()
+            timeline_items = []
+
+            for script in scripts:
+                sid = str(script["id"])
+                if sid not in active_ids:
+                    continue
+                trigger = self._scheduler.get_trigger_info(sid)
+                trigger_desc = self._scheduler.describe_trigger(trigger)
+                name = script.get("name", "") or (script.get("dsl_text", "") or "")[:30].replace("\n", " ")
+                tt = trigger.get("type", "interval")
+
+                if tt == "cron":
+                    icon = ft.Icons.ACCESS_TIME_ROUNDED
+                    color = COLORS["orange"]
+                    time_text = f'{trigger.get("hour", 0):02d}:{trigger.get("minute", 0):02d}'
+                elif tt == "interval":
+                    icon = ft.Icons.LOOP_ROUNDED
+                    color = COLORS["blue"]
+                    secs = trigger.get("seconds", 3600)
+                    if secs >= 3600:
+                        time_text = f"{secs // 3600}h"
+                    else:
+                        time_text = f"{secs // 60}m"
+                else:
+                    icon = ft.Icons.FLASH_ON_ROUNDED
+                    color = COLORS["green"]
+                    time_text = "once"
+
+                timeline_items.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Container(
+                                content=ft.Text(time_text, size=10, color=COLORS["card_bg"],
+                                                weight=ft.FontWeight.W_700),
+                                bgcolor=color, border_radius=6, width=40,
+                                alignment=ft.Alignment(0, 0),
+                                padding=ft.padding.symmetric(vertical=4),
+                            ),
+                            ft.Icon(icon, size=14, color=color),
+                            ft.Text(name or f"#{sid}", size=11, color=COLORS["dark_text"],
+                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, expand=True),
+                        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        padding=ft.padding.symmetric(vertical=2),
+                    )
+                )
+
+            if not timeline_items:
+                timeline_items.append(
+                    ft.Text("稼働中のスクリプトなし", size=12, color=COLORS["light_text"], italic=True)
+                )
+
+            self._scheduler_timeline.content = ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.TIMELINE_ROUNDED, size=16, color=COLORS["green"]),
+                    ft.Text("スケジューラ", size=13, weight=ft.FontWeight.W_700,
+                            color=COLORS["dark_text"]),
+                    ft.Container(expand=True),
+                    ft.Text(f"{len([s for s in scripts if str(s['id']) in active_ids])} 件稼働",
+                            size=11, color=COLORS["green"], weight=ft.FontWeight.W_600),
+                ], spacing=6),
+                ft.Column(timeline_items, spacing=2),
+            ], spacing=8)
+        except Exception:
+            self._scheduler_timeline.content = ft.Text("タイムライン読み込みエラー", size=12,
+                                                        color=COLORS["light_text"])
+
     def _refresh_machine_logs(self) -> None:
         self._machine_logs_list.controls.clear()
         try:
@@ -469,8 +621,9 @@ class DashboardView:
                             ], spacing=2, expand=True),
                         ], spacing=8),
                         bgcolor=COLORS["bg"],
-                        border_radius=8,
+                        border_radius=12,
                         padding=8,
+                        shadow=SHADOW_SOFT,
                     )
                 )
         except Exception:
@@ -482,6 +635,7 @@ class DashboardView:
     def _start_refresh_timer(self) -> None:
         def refresh() -> None:
             self._refresh_status()
+            self._refresh_graphs()
             self._refresh_machine_logs()
             try:
                 self._page.update()

@@ -52,7 +52,7 @@ struct MemoryTab: View {
                 }
                 .padding(.top, 8)
             }
-            .background(Color(hex: "FAFAF8"))
+            .background(Color(hex: "F2F0EB"))
             .navigationTitle("メモリ")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable {

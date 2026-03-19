@@ -142,7 +142,7 @@ struct OnboardingView: View {
 
             Spacer()
         }
-        .background(Color(hex: "FAFAF8"))
+        .background(Color(hex: "F2F0EB"))
     }
 
     private func onNext() {
@@ -167,7 +167,6 @@ struct OnboardingView: View {
                         "action_type": "memory",
                         "content": memory,
                     ]
-                    // user_id をセット
                     if let userId = authManager.userId {
                         payload["user_id"] = userId
                     }
@@ -179,7 +178,46 @@ struct OnboardingView: View {
                     print("Onboarding save error: \(error)")
                 }
             }
+            // 初回提案を生成（オンボーディング回答に基づく）
+            await generateWelcomeSuggestions()
             onComplete()
+        }
+    }
+
+    private func generateWelcomeSuggestions() async {
+        // 回答から文脈を読んで初回提案を生成
+        let morningType = answers.first ?? ""
+        let isMorningPerson = morningType.contains("朝型")
+
+        var suggestions: [[String: String]] = []
+
+        // 提案1: 朝型/夜型に応じた提案
+        if isMorningPerson {
+            suggestions.append([
+                "action_type": "general_suggest",
+                "content": "朝の時間を活用して、今週のタスクを整理してみない？\n理由: 朝型のあなたなら、朝の集中力が高い時間帯を活かせるはず\n<!--meta:{\"type\":\"notify\"}-->",
+            ])
+        } else {
+            suggestions.append([
+                "action_type": "general_suggest",
+                "content": "夜のリラックスタイムに、明日の予定を確認してみない？\n理由: 夜型のあなたに合わせて、夜の時間を有効活用する提案です\n<!--meta:{\"type\":\"notify\"}-->",
+            ])
+        }
+
+        // 提案2: LifeScript紹介
+        suggestions.append([
+            "action_type": "general_suggest",
+            "content": "PC版のIDEで LifeScript を書いてみよう。例えば「毎朝天気を通知」のようなルールが作れるよ\n理由: LifeScriptを書くほど、ダリーがあなたの生活をもっと理解できるようになります\n<!--meta:{\"type\":\"notify\"}-->",
+        ])
+
+        for var suggestion in suggestions {
+            if let userId = authManager.userId {
+                suggestion["user_id"] = userId
+            }
+            try? await supabase
+                .from("machine_logs")
+                .insert(suggestion)
+                .execute()
         }
     }
 }

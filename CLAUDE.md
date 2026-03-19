@@ -357,7 +357,8 @@ iOSへ通知（DB経由ポーリング または プッシュ）
 | `functions/web.py` | `web.fetch()` — URL取得・要約 | **実装済み** |
 | `functions/widget.py` | `widget.show()` — ホーム画面ウィジェット | **実装済み** |
 | `context_analyzer.py` | カレンダー・メール・traits分析 → 提案生成（LLM使用） | **実装済み** |
-| `functions/streak.py` | `streak.count()` の実装 | 欲しい |
+| `functions/device.py` | `device.cpu()` / `device.memory()` / `device.info()` — デバイス情報 | **実装済み** |
+| `functions/streak.py` | `streak.count()` の実装 | 将来 |
 | `functions/weather.py` | `weather.get()`（OpenWeatherMap） | 将来 |
 
 ---
@@ -432,11 +433,12 @@ OPENROUTER_API_KEY=your_openrouter_key
 
 ### Phase 2（ハッカソン当日向け）— マシンとの対話
 
-- [ ] 初回オンボーディング（パーソナリティ入力）
-- [ ] マシンキャラクター設定
-- [ ] `user.context()` / `streak.count()` / `machine.suggest()` 実装
-- [ ] `context_builder.py` — 文脈をLLMに渡す仕組み
-- [ ] 能動的な提案デモシーン（「休息を追加しようか？」）
+- [x] 初回オンボーディング（パーソナリティ入力）— PC/iOS両対応
+- [x] マシンキャラクター設定（ダリー）
+- [x] `machine.suggest()` / `machine.analyze()` 実装
+- [x] `context_analyzer.py` — カレンダー・メール・traitsをLLMで分析→提案生成
+- [x] 能動的な提案デモシーン（オンボーディング直後 + 定期分析）
+- [ ] `user.context()` / `streak.count()` — 将来実装
 
 > **成功条件**: ユーザーが何も設定していないのに、マシンが文脈を読んで能動的に提案してくること。
 

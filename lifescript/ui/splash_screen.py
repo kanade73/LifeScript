@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from .app import BG, BLUE, CARD_BG, DARK_TEXT, LIGHT_TEXT, MID_TEXT, YELLOW, darii_image
+from .app import BG, BLUE, CARD_BG, CARD_SHADOW, DARK_TEXT, LIGHT_TEXT, MID_TEXT, YELLOW, darii_image
 
 
 def build_splash(page: ft.Page) -> ft.Container:
@@ -16,7 +16,7 @@ def build_splash(page: ft.Page) -> ft.Container:
             ft.Container(
                 content=darii_image(90),
                 width=100, height=100,
-                border_radius=24, alignment=ft.Alignment(0, 0),
+                border_radius=28, alignment=ft.Alignment(0, 0),
                 shadow=ft.BoxShadow(
                     spread_radius=0, blur_radius=30,
                     color=f"{YELLOW}44", offset=ft.Offset(0, 8),
@@ -32,7 +32,7 @@ def build_splash(page: ft.Page) -> ft.Container:
             ft.Container(height=48),
             ft.ProgressRing(
                 width=28, height=28,
-                stroke_width=3, color=YELLOW,
+                stroke_width=2.5, color=YELLOW,
             ),
             ft.Container(height=12),
             ft.Text("起動中...", size=14, color=LIGHT_TEXT),

@@ -19,7 +19,7 @@ struct NotificationsTab: View {
                 }
             }
             .listStyle(.plain)
-            .background(Color(hex: "FAFAF8"))
+            .background(Color(hex: "F2F0EB"))
             .navigationTitle("通知")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable {

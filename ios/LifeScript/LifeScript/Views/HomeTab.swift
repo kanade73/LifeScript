@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeTab: View {
     @EnvironmentObject var dataService: DataService
+    @StateObject private var deviceService = DeviceService()
     @State private var showEventForm = false
     @State private var editingEvent: CalendarEvent?
     @State private var showReminderAlert = false
@@ -19,6 +20,9 @@ struct HomeTab: View {
 
                     // ── ダリーが学んだこと ──
                     observationsSection
+
+                    // ── デバイスコンテキスト ──
+                    deviceContextSection
 
                     // ── 通知 ──
                     notificationsSection
@@ -38,11 +42,17 @@ struct HomeTab: View {
                 .padding(.top, 8)
                 .padding(.bottom, 20)
             }
-            .background(Color(hex: "FAFAF8"))
+            .scrollContentBackground(.hidden)
+            .background(Color(hex: "F2F0EB").ignoresSafeArea())
             .navigationTitle("LifeScript")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(hex: "F2F0EB"), for: .navigationBar)
             .refreshable {
                 await dataService.fetchAll()
+                await deviceService.fetchAll()
+            }
+            .task {
+                await deviceService.fetchAll()
             }
         }
     }
@@ -178,6 +188,118 @@ struct HomeTab: View {
                 )
             }
         }
+    }
+
+    // MARK: - Device Context
+
+    private var deviceContextSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Color(hex: "4262FF"))
+                Text("デバイス")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Color(hex: "2D2B27"))
+            }
+
+            // バッテリー & 輝度
+            HStack(spacing: 12) {
+                // バッテリー
+                HStack(spacing: 8) {
+                    Image(systemName: deviceService.batteryIcon)
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(hex: deviceService.batteryColor))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("バッテリー")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "A09A93"))
+                        Text("\(deviceService.batteryPercent)%")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(Color(hex: "2D2B27"))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color(hex: deviceService.batteryColor).opacity(0.08))
+                .cornerRadius(12)
+
+                // 画面輝度
+                HStack(spacing: 8) {
+                    Image(systemName: deviceService.brightnessPercent > 50 ? "sun.max.fill" : "sun.min.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(hex: "FFD02F"))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("画面輝度")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "A09A93"))
+                        Text("\(deviceService.brightnessPercent)%")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(Color(hex: "2D2B27"))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color(hex: "FFD02F").opacity(0.08))
+                .cornerRadius(12)
+            }
+
+            // 歩数 & 睡眠
+            if deviceService.healthAvailable {
+                HStack(spacing: 12) {
+                    // 歩数
+                    HStack(spacing: 8) {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color(hex: "00C875"))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("今日の歩数")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "A09A93"))
+                            Text(deviceService.todaySteps.formatted())
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(Color(hex: "2D2B27"))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color(hex: "00C875").opacity(0.08))
+                    .cornerRadius(12)
+
+                    // 睡眠
+                    HStack(spacing: 8) {
+                        Image(systemName: "moon.zzz.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color(hex: "9B59B6"))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("昨夜の睡眠")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "A09A93"))
+                            if let hours = deviceService.lastSleepHours {
+                                Text(String(format: "%.1f時間", hours))
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(Color(hex: "2D2B27"))
+                            } else {
+                                Text("--")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(Color(hex: "A09A93"))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color(hex: "9B59B6").opacity(0.08))
+                    .cornerRadius(12)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(hex: "E8E4DC"), lineWidth: 1)
+        )
     }
 
     // MARK: - Notifications

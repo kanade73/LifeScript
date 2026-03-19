@@ -11,7 +11,7 @@ import flet as ft
 from ..database.client import db_client
 from .app import (
     BG, CARD_BG, BLUE, GREEN, CORAL, YELLOW, ORANGE, PURPLE,
-    DARK_TEXT, MID_TEXT, LIGHT_TEXT, darii_image,
+    DARK_TEXT, MID_TEXT, LIGHT_TEXT, CARD_SHADOW, SHADOW_SOFT, darii_image,
 )
 
 _BORDER = "#E8E4DC"
@@ -94,7 +94,7 @@ def build_onboarding(page: ft.Page, on_complete: callable) -> ft.Control:
                     ),
                     ft.Text(choice, size=15, color=DARK_TEXT),
                 ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                bgcolor=CARD_BG, border_radius=12,
+                bgcolor=CARD_BG, border_radius=16,
                 padding=ft.padding.symmetric(horizontal=16, vertical=14),
                 border=ft.border.all(1, _BORDER),
                 on_click=lambda e, ci=i: _select(ci),
@@ -155,7 +155,7 @@ def build_onboarding(page: ft.Page, on_complete: callable) -> ft.Control:
                 content=ft.ProgressBar(
                     value=0, bgcolor=f"{BLUE}15", color=BLUE,
                 ),
-                expand=True, height=4, border_radius=2,
+                expand=True, height=6, border_radius=3,
             ),
         ]),
     )
@@ -185,7 +185,7 @@ def build_onboarding(page: ft.Page, on_complete: callable) -> ft.Control:
             ft.Row([
                 ft.Container(
                     content=darii_image(44),
-                    width=48, height=48, border_radius=14,
+                    width=48, height=48, border_radius=18,
                     alignment=ft.Alignment(0, 0),
                 ),
                 ft.Container(width=12),
@@ -214,9 +214,9 @@ def build_onboarding(page: ft.Page, on_complete: callable) -> ft.Control:
                     ]),
                 ], spacing=0),
                 bgcolor=CARD_BG,
-                border_radius=16,
+                border_radius=24,
                 padding=ft.padding.all(24),
-                border=ft.border.all(1, _BORDER),
+                shadow=CARD_SHADOW,
                 width=560,
             ),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),

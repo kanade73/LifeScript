@@ -7,7 +7,7 @@ from typing import Callable
 import flet as ft
 
 from .app import (
-    BG, BLUE, CARD_BG, CORAL, DARK_TEXT,
+    BG, BLUE, CARD_BG, CARD_SHADOW, CORAL, DARK_TEXT,
     GREEN, LIGHT_TEXT, MID_TEXT, YELLOW, darii_image,
 )
 
@@ -24,7 +24,7 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
         label="メールアドレス",
         prefix_icon=ft.Icons.EMAIL_ROUNDED,
         text_size=15,
-        border_radius=12,
+        border_radius=16,
         bgcolor=CARD_BG,
         border_color="#E8E4DC",
         focused_border_color=BLUE,
@@ -37,7 +37,7 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
         password=True,
         can_reveal_password=True,
         text_size=15,
-        border_radius=12,
+        border_radius=16,
         bgcolor=CARD_BG,
         border_color="#E8E4DC",
         focused_border_color=BLUE,
@@ -53,7 +53,7 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
         width=360,
         height=48,
         style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=12),
+            shape=ft.RoundedRectangleBorder(radius=16),
             elevation=0,
             text_style=ft.TextStyle(size=15, weight=ft.FontWeight.W_600),
         ),
@@ -154,7 +154,7 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
             ft.Container(
                 content=darii_image(72),
                 width=80, height=80,
-                border_radius=20, alignment=ft.Alignment(0, 0),
+                border_radius=24, alignment=ft.Alignment(0, 0),
                 shadow=ft.BoxShadow(
                     spread_radius=0, blur_radius=24,
                     color=f"{YELLOW}33", offset=ft.Offset(0, 6),
@@ -168,23 +168,30 @@ def build_login(page: ft.Page, on_success: Callable[[dict], None]) -> ft.Contain
                 size=14, color=MID_TEXT,
             ),
             ft.Container(height=36),
-            # フォーム
-            email_field,
-            ft.Container(height=12),
-            password_field,
-            ft.Container(height=8),
-            ft.Container(content=error_text, width=360),
-            ft.Container(content=success_text, width=360),
-            ft.Container(height=16),
-            action_button,
-            ft.Container(height=14),
-            ft.Row([
-                toggle_text,
-                toggle_link,
-            ], spacing=4, alignment=ft.MainAxisAlignment.CENTER),
+            # フォームカード
+            ft.Container(
+                content=ft.Column([
+                    email_field,
+                    ft.Container(height=12),
+                    password_field,
+                    ft.Container(height=8),
+                    ft.Container(content=error_text, width=360),
+                    ft.Container(content=success_text, width=360),
+                    ft.Container(height=16),
+                    action_button,
+                    ft.Container(height=14),
+                    ft.Row([
+                        toggle_text,
+                        toggle_link,
+                    ], spacing=4, alignment=ft.MainAxisAlignment.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD_BG,
+                border_radius=24,
+                padding=ft.padding.all(32),
+                shadow=CARD_SHADOW,
+                width=420,
+            ),
             ft.Container(height=20),
-            ft.Divider(height=1, color="#E8E4DC", thickness=1),
-            ft.Container(height=12),
             skip_button,
             ft.Container(expand=True),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),

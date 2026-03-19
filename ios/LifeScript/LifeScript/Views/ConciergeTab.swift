@@ -92,7 +92,7 @@ struct ConciergeTab: View {
                 .padding(.vertical, 8)
                 .background(Color.white)
             }
-            .background(Color(hex: "FAFAF8"))
+            .background(Color(hex: "F2F0EB"))
             .navigationTitle("ダリー")
             .navigationBarTitleDisplayMode(.inline)
         }
