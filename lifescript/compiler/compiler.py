@@ -93,10 +93,10 @@ LifeScript の DSL は YAML 風の宣言的記法です:
 例: 「運動7日連続なら褒めて」→ if streak_count("運動") >= 7: notify("1週間継続おめでとう！")
 例: 「前回の天気を記録」→ w = weather_get(); memory_write("last_weather", w["condition"])
 例: 「1+2*3を計算して通知」→ result = math_calc("1+2*3"); notify(f"計算結果: {{result}}")
-例: 「4月1日まであと何日か通知」→ days = date_diff("2026-04-01"); notify(f"4月1日まであと{days}日")
+例: 「4月1日まであと何日か通知」→ days = date_diff("2026-04-01"); notify(f"4月1日まであと{{days}}日")
 例: 「英語に翻訳して通知」→ result = translate("こんにちは", "en"); notify(result)
 例: 「このページを要約して」→ text = web_fetch(url, summary=False); result = summarize(text); widget_show("要約", result)
-例: 「URLのQRコードを生成」→ url = qr_generate("https://example.com"); notify(f"QRコード: {url}")
+例: 「URLのQRコードを生成」→ url = qr_generate("https://example.com"); notify(f"QRコード: {{url}}")
 例: 「成功音を鳴らして」→ sound_play("success")
 
 ## トリガー（実行タイミング）
