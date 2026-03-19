@@ -156,6 +156,7 @@ repeat_10min:
         user_msg = mock.call_args.kwargs["messages"][1]["content"]
         starts = re.findall(r'start="(\d{4}-\d{2}-\d{2})T', user_msg)
         assert starts
+        assert all(datetime.fromisoformat(s).weekday() < 5 for s in starts)
         assert holiday.isoformat() not in starts
         assert all(datetime.fromisoformat(s).weekday() < 5 for s in starts)
 
@@ -219,4 +220,41 @@ repeat_10min:
         user_msg = mock.call_args.kwargs["messages"][1]["content"]
         starts = re.findall(r'start="(\d{4}-\d{2}-\d{2})T', user_msg)
         assert starts
-        assert all(datetime.fromisoformat(s).weekday() < 5 for s in starts)
+
+    def test_compile_after_trigger_overrides_llm_trigger(self, compiler):
+        result_dict = {
+            "title": "デモ通知",
+            "trigger": {"type": "interval", "seconds": 3600},
+            "code": 'notify("demo")',
+        }
+        dsl = """
+after 10s:
+  notify("demo")
+""".strip()
+
+        with patch("litellm.completion", return_value=_mock_llm_response(result_dict)) as mock:
+            result = compiler.compile(dsl)
+
+        assert result["trigger"] == {"type": "after", "seconds": 10}
+        user_msg = mock.call_args.kwargs["messages"][1]["content"]
+        assert "after 10s:" not in user_msg
+        assert 'notify("demo")' in user_msg
+
+    @pytest.mark.parametrize(
+        ("trigger", "message"),
+        [
+            ({"type": "interval", "seconds": 0}, "intervalトリガーの秒数は1以上"),
+            ({"type": "interval", "seconds": -5}, "intervalトリガーの秒数は1以上"),
+            ({"type": "cron", "hour": 24, "minute": 0}, "cronトリガーの hour は0-23"),
+            ({"type": "cron", "hour": 8, "minute": 60}, "cronトリガーの minute は0-59"),
+        ],
+    )
+    def test_compile_rejects_invalid_trigger_ranges(self, compiler, trigger, message):
+        result_dict = {
+            "title": "invalid trigger",
+            "trigger": trigger,
+            "code": 'notify("demo")',
+        }
+        with patch("litellm.completion", return_value=_mock_llm_response(result_dict)):
+            with pytest.raises(CompileError, match=message):
+                compiler.compile('notify("demo")')

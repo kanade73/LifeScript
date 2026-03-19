@@ -203,15 +203,10 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
 
             editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
 
-            def _open_ide_with_dsl(dsl_code: str) -> None:
+            def _open_ide_with_dsl(dsl_code: str, instant: bool = False) -> None:
                 """提案承認時: IDE に遷移して LifeScript を挿入する。"""
                 _on_nav(1)  # IDE 画面に遷移
-                import threading
-                def _delayed():
-                    import time
-                    time.sleep(0.2)
-                    editor_view.prefill_dsl(dsl_code)
-                threading.Thread(target=_delayed, daemon=True).start()
+                editor_view.prefill_dsl(dsl_code, instant=instant)
 
             home_view = HomeView(page=page, scheduler=scheduler,
                                 on_navigate=lambda idx: _on_nav(idx),

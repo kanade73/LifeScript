@@ -312,6 +312,7 @@ class DashboardView:
             options=[
                 ft.dropdown.Option("interval", "インターバル（定期実行）"),
                 ft.dropdown.Option("cron", "時刻指定（毎日）"),
+                ft.dropdown.Option("after", "遅延実行（1回だけ）"),
             ],
             width=280,
         )
@@ -366,13 +367,14 @@ class DashboardView:
             else:
                 try:
                     sec = int(interval_field.value)
-                    if sec < 10:
+                    minimum = 1 if ttype == "after" else 10
+                    if sec < minimum:
                         raise ValueError
                 except (TypeError, ValueError):
-                    interval_field.error_text = "10以上の整数"
+                    interval_field.error_text = "1以上の整数" if ttype == "after" else "10以上の整数"
                     self._page.update()
                     return
-                new_trigger = {"type": "interval", "seconds": sec}
+                new_trigger = {"type": ttype, "seconds": sec}
 
             self._scheduler.update_trigger(sid, script, new_trigger)
             dialog.open = False
@@ -556,6 +558,11 @@ class DashboardView:
                     icon = ft.Icons.ACCESS_TIME_ROUNDED
                     color = COLORS["orange"]
                     time_text = f'{trigger.get("hour", 0):02d}:{trigger.get("minute", 0):02d}'
+                elif tt == "after":
+                    icon = ft.Icons.TIMER_OUTLINED
+                    color = COLORS["green"]
+                    secs = trigger.get("seconds", 0)
+                    time_text = f"{secs}s"
                 elif tt == "interval":
                     icon = ft.Icons.LOOP_ROUNDED
                     color = COLORS["blue"]

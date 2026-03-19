@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import calendar as cal_mod
+import json
 import os
 import threading
 from datetime import datetime, timedelta, timezone
@@ -62,9 +63,17 @@ class HomeView:
         # データキャッシュ（10秒間有効）
         self._cache: dict[str, tuple[float, any]] = {}
         self._cache_ttl = 5.0  # キャッシュ有効期間（秒）
+        self._notify_overlay_visible = False
+        self._notify_overlay_message = ""
+        self._notify_overlay_time = ""
+        self._notify_overlay_action_type = "notify"
+        self._notify_overlay_signature: str | None = None
+        self._notify_overlay: ft.Container | None = None
+        self._notify_dialog: ft.AlertDialog | None = None
 
     def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
         self._logs = (entries + self._logs)[:50]
+        self._maybe_show_notify_overlay(entries)
         self._refresh_content()
 
     def _refresh_content(self) -> None:
@@ -120,6 +129,213 @@ class HomeView:
         self._cache[key] = (current_time, value)
         return value
 
+    def _build_notify_overlay(self) -> ft.Container:
+        is_scheduled = self._notify_overlay_action_type == "notify_scheduled"
+        accent = PURPLE if is_scheduled else CORAL
+        soft_bg = "#F8F0FF" if is_scheduled else "#FFF2F5"
+        badge_bg = "#ECE2FF" if is_scheduled else "#FFE1EA"
+        border = "#DCCEFF" if is_scheduled else "#F6C9D8"
+        icon = ft.Icons.TIMER_ROUNDED if is_scheduled else ft.Icons.NOTIFICATIONS_ACTIVE_ROUNDED
+        title = "まもなく届く通知" if is_scheduled else "LifeScript からの通知"
+
+        return ft.Container(
+            visible=self._notify_overlay_visible,
+            bgcolor="#F6EFE680",
+            expand=True,
+            alignment=ft.Alignment(0, 0),
+            content=ft.Container(
+                width=720,
+                bgcolor=soft_bg,
+                border=ft.border.all(1, border),
+                border_radius=32,
+                padding=ft.padding.symmetric(horizontal=28, vertical=26),
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=34,
+                    color=f"{accent}33",
+                    offset=ft.Offset(0, 12),
+                ),
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(
+                            width=54,
+                            height=54,
+                            border_radius=18,
+                            bgcolor=badge_bg,
+                            alignment=ft.Alignment(0, 0),
+                            content=ft.Icon(icon, size=28, color=accent),
+                        ),
+                        ft.Column([
+                            ft.Text(title, size=18, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                            ft.Text("発表用の notify スポットライト", size=12, color=MID_TEXT),
+                        ], spacing=3, expand=True),
+                        ft.TextButton(
+                            "閉じる",
+                            style=ft.ButtonStyle(color=accent, padding=ft.padding.symmetric(horizontal=12, vertical=8)),
+                            on_click=lambda e: self._dismiss_notify_overlay(),
+                        ),
+                    ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Container(height=14),
+                    ft.Container(
+                        bgcolor="#FFFFFFC8",
+                        border_radius=24,
+                        padding=ft.padding.symmetric(horizontal=22, vertical=24),
+                        border=ft.border.all(1, "#FFFFFF"),
+                        content=ft.Text(
+                            self._notify_overlay_message or "notify() のメッセージがここに大きく表示されます",
+                            size=34,
+                            weight=ft.FontWeight.W_800,
+                            color=DARK_TEXT,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ),
+                    ft.Container(height=12),
+                    ft.Row([
+                        ft.Icon(ft.Icons.ACCESS_TIME_ROUNDED, size=16, color=LIGHT_TEXT),
+                        ft.Text(self._notify_overlay_time or "たった今", size=13, color=LIGHT_TEXT),
+                        ft.Container(expand=True),
+                        ft.Container(
+                            bgcolor=badge_bg,
+                            border_radius=999,
+                            padding=ft.padding.symmetric(horizontal=12, vertical=7),
+                            content=ft.Text(
+                                "dismiss するまで表示",
+                                size=12,
+                                weight=ft.FontWeight.W_700,
+                                color=accent,
+                            ),
+                        ),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ], spacing=0),
+            ),
+        )
+
+    def _dismiss_notify_overlay(self) -> None:
+        self._notify_overlay_visible = False
+        if self._notify_overlay is not None:
+            self._notify_overlay.visible = False
+        if self._notify_dialog is not None:
+            self._notify_dialog.open = False
+        self._page.update()
+
+    def _show_notify_dialog(self) -> None:
+        is_scheduled = self._notify_overlay_action_type == "notify_scheduled"
+        accent = PURPLE if is_scheduled else CORAL
+        soft_bg = "#F8F0FF" if is_scheduled else "#FFF2F5"
+        badge_bg = "#ECE2FF" if is_scheduled else "#FFE1EA"
+        icon = ft.Icons.TIMER_ROUNDED if is_scheduled else ft.Icons.NOTIFICATIONS_ACTIVE_ROUNDED
+
+        content = ft.Container(
+            width=720,
+            bgcolor=soft_bg,
+            border=ft.border.all(1, "#DCCEFF" if is_scheduled else "#F6C9D8"),
+            border_radius=32,
+            padding=ft.padding.symmetric(horizontal=28, vertical=26),
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        width=54,
+                        height=54,
+                        border_radius=18,
+                        bgcolor=badge_bg,
+                        alignment=ft.alignment.center,
+                        content=ft.Icon(icon, size=28, color=accent),
+                    ),
+                    ft.Column([
+                        ft.Text(
+                            "まもなく届く通知" if is_scheduled else "LifeScript からの通知",
+                            size=18,
+                            weight=ft.FontWeight.W_700,
+                            color=DARK_TEXT,
+                        ),
+                        ft.Text("発表用の notify スポットライト", size=12, color=MID_TEXT),
+                    ], spacing=3, expand=True),
+                ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=14),
+                ft.Container(
+                    bgcolor="#FFFFFFC8",
+                    border_radius=24,
+                    padding=ft.padding.symmetric(horizontal=22, vertical=24),
+                    border=ft.border.all(1, "#FFFFFF"),
+                    content=ft.Text(
+                        self._notify_overlay_message or "notify() のメッセージがここに大きく表示されます",
+                        size=34,
+                        weight=ft.FontWeight.W_800,
+                        color=DARK_TEXT,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ),
+                ft.Container(height=12),
+                ft.Row([
+                    ft.Icon(ft.Icons.ACCESS_TIME_ROUNDED, size=16, color=LIGHT_TEXT),
+                    ft.Text(self._notify_overlay_time or "たった今", size=13, color=LIGHT_TEXT),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=0),
+        )
+
+        if self._notify_dialog is None:
+            self._notify_dialog = ft.AlertDialog(
+                modal=True,
+                bgcolor=ft.Colors.TRANSPARENT,
+                content=content,
+                actions=[
+                    ft.TextButton(
+                        "閉じる",
+                        style=ft.ButtonStyle(color=accent),
+                        on_click=lambda e: self._dismiss_notify_overlay(),
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.CENTER,
+                inset_padding=20,
+            )
+            self._page.overlay.append(self._notify_dialog)
+        else:
+            self._notify_dialog.content = content
+            self._notify_dialog.actions = [
+                ft.TextButton(
+                    "閉じる",
+                    style=ft.ButtonStyle(color=accent),
+                    on_click=lambda e: self._dismiss_notify_overlay(),
+                ),
+            ]
+
+        self._notify_dialog.open = True
+
+    def _set_notify_overlay(self, action_type: str, message: str, time_str: str, signature: str) -> None:
+        self._notify_overlay_action_type = action_type
+        self._notify_overlay_message = message
+        self._notify_overlay_time = time_str
+        self._notify_overlay_signature = signature
+        self._notify_overlay_visible = True
+        if self._notify_overlay is not None:
+            refreshed = self._build_notify_overlay()
+            self._notify_overlay.content = refreshed.content
+            self._notify_overlay.bgcolor = refreshed.bgcolor
+            self._notify_overlay.alignment = refreshed.alignment
+            self._notify_overlay.visible = True
+        self._show_notify_dialog()
+        if self._content_container is not None:
+            self._page.update()
+
+    def _maybe_show_notify_overlay(self, entries: list[tuple[str, str, str]]) -> None:
+        if not any(entry and entry[0] == "notify" for entry in entries):
+            return
+
+        latest_notify = None
+        for entry in self._get_notification_entries(limit=10):
+            if entry.get("action_type") == "notify":
+                latest_notify = entry
+                break
+
+        if not latest_notify:
+            return
+
+        action_type, message, time_str = self._notification_meta(latest_notify)
+        signature = f"{latest_notify.get('id')}:{message}:{time_str}"
+        if signature == self._notify_overlay_signature:
+            return
+        self._set_notify_overlay(action_type, message, time_str, signature)
+
     def _start_refresh_timer(self) -> None:
         """定期リフレッシュ（10秒ごと）。"""
         self._is_active = True
@@ -149,7 +365,14 @@ class HomeView:
             content=self._build_content(),
             expand=True,
         )
-        return self._content_container
+        self._notify_overlay = self._build_notify_overlay()
+        return ft.Stack(
+            [
+                self._content_container,
+                self._notify_overlay,
+            ],
+            expand=True,
+        )
 
     def _build_content(self) -> ft.Control:
         """ホーム画面の中身をフルリビルドする。"""
@@ -264,6 +487,7 @@ class HomeView:
             schedule_widget = self._widget_schedule()
             machine_widget = self._widget_machine()
             recommended_widget = self._widget_recommended_templates()
+            notify_spotlight = self._widget_notify_spotlight()
 
             page_content = ft.Row([
                 ft.Column([
@@ -274,6 +498,8 @@ class HomeView:
                     recommended_widget,
                 ], expand=6, spacing=0, scroll=ft.ScrollMode.AUTO),
                 ft.Column([
+                    notify_spotlight,
+                    ft.Container(height=10),
                     machine_widget,
                     ft.Container(height=10),
                     schedule_widget,
@@ -325,8 +551,28 @@ class HomeView:
 
     def _widget_recommended_templates(self) -> ft.Container:
         """おすすめのテンプレート（IDEのギャラリーから抜粋）を表示。"""
-        # 初心者向けの実用的で分かりやすい2つを抜粋
         templates = [
+            {
+                "icon": ft.Icons.CELEBRATION_ROUNDED,
+                "color": "#FF8FAB",
+                "title": "10秒後にデモ通知",
+                "desc": "after 10s でホームに大きい通知カードを出します",
+                "dsl": "# デモ通知\nafter 10s:\n  notify(\"発表お疲れさま！うまくいった？\")\n",
+            },
+            {
+                "icon": ft.Icons.ONDEMAND_VIDEO_ROUNDED,
+                "color": "#FFA94D",
+                "title": "30秒後にデモ動画用通知",
+                "desc": "少し長めに待って、説明中に notify を目立たせます",
+                "dsl": "# デモ動画用 notify\nafter 30s:\n  notify(\"ここから LifeScript が動き出すよ\")\n",
+            },
+            {
+                "icon": ft.Icons.TIMER_ROUNDED,
+                "color": "#7B8CFF",
+                "title": "50秒後に締めの通知",
+                "desc": "プレゼン後半の見せ場を作る demo notify です",
+                "dsl": "# 締めの notify\nafter 50s:\n  notify(\"発表お疲れさま！うまくいった？\")\n",
+            },
             {
                 "icon": ft.Icons.EMAIL_ROUNDED,
                 "color": "#00C875",
@@ -334,13 +580,6 @@ class HomeView:
                 "desc": "Gmailの未読メールをチェックして通知します",
                 "dsl": "# 未読メールを通知\nwhen gmail.unread() >= 1:\n  notify(\"未読メールがあるよ: \" + gmail.search(\"is:unread\", limit=3))\n",
             },
-            {
-                "icon": ft.Icons.AUTO_AWESOME_ROUNDED,
-                "color": "#FFD02F",
-                "title": "毎朝ダリーが生活を分析",
-                "desc": "カレンダーや文脈を分析して提案を自動生成します",
-                "dsl": "# 毎朝ダリーが生活文脈を分析して提案\nwhen morning:\n  machine.analyze()\n",
-            }
         ]
 
         def _make_item(tmpl: dict) -> ft.Container:
@@ -363,7 +602,7 @@ class HomeView:
                         padding=ft.padding.symmetric(horizontal=12, vertical=6),
                         border_radius=12,
                         bgcolor=f"{BLUE}10",
-                        on_click=lambda e: self._on_open_ide(tmpl["dsl"]) if self._on_open_ide else None,
+                        on_click=lambda e: self._on_open_ide(tmpl["dsl"], True) if self._on_open_ide else None,
                         ink=True,
                     ),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -659,7 +898,7 @@ class HomeView:
         if hour < 6:
             accent = PURPLE
         elif hour < 12:
-            accent = ORANGE
+            accent = "#E8C79A"  # warm pastel apricot (morning)
         elif hour < 18:
             accent = BLUE
         else:
@@ -1032,6 +1271,51 @@ class HomeView:
                 body_lines.append(line)
         return "\n".join(body_lines).strip(), reason
 
+    @staticmethod
+    def _demo_suggestion_entries() -> list[dict]:
+        demo_specs = [
+            {
+                "message": "HackUで発表してるみたいだね。10秒後に通知が飛ぶデモ用 LifeScript を置いておく？",
+                "reason": "最短で動きが見えるので、最初の見せ場に向いています。",
+                "dsl": "# デモ通知\nafter 10s:\n  notify(\"発表お疲れさま！うまくいった？\")\n",
+            },
+            {
+                "message": "デモ動画向けに、30秒後に通知が出る Rule-Based テンプレを使う？",
+                "reason": "LLM を通さずそのまま動くので、展示の保険として使いやすいです。",
+                "dsl": "# デモ動画用 notify\nafter 30s:\n  notify(\"ここから LifeScript が動き出すよ\")\n",
+            },
+            {
+                "message": "締めの演出用に、50秒後に大きい notify を出すテンプレもあるよ。",
+                "reason": "プレゼン後半の伏線回収や、展示での一発ネタに向いています。",
+                "dsl": "# 締めの notify\nafter 50s:\n  notify(\"発表お疲れさま！うまくいった？\")\n",
+            },
+        ]
+
+        entries = []
+        for spec in demo_specs:
+            meta = json.dumps(
+                {
+                    "type": "notify",
+                    "temporary_demo": True,
+                    "rule_based": True,
+                    "dsl": spec["dsl"],
+                },
+                ensure_ascii=False,
+            )
+            entries.append(
+                {
+                    "id": None,
+                    "action_type": "general_suggest",
+                    "content": (
+                        f"{spec['message']}\n"
+                        f"理由: {spec['reason']}\n"
+                        f"<!--meta:{meta}-->"
+                    ),
+                    "triggered_at": datetime.now(_JST).isoformat(),
+                }
+            )
+        return entries
+
     def _widget_machine(self) -> ft.Container:
         # ── サマリー行 ──
         now = datetime.now(_JST)
@@ -1095,15 +1379,19 @@ class HomeView:
         except Exception:
             pass
 
+        suggestion_entries = [*self._demo_suggestion_entries(), *suggestion_entries]
+
         def _select_suggestion(idx: int) -> None:
             selected_entry[0] = suggestion_entries[idx]
             for i, card in enumerate(suggestion_cards):
+                raw = suggestion_entries[i].get("content", "")
+                is_demo_card = '"temporary_demo":true' in raw.replace(" ", "")
                 if i == idx:
                     card.border = ft.border.all(2, ORANGE)
                     card.bgcolor = "#FFF8EE"
                 else:
-                    card.border = ft.border.all(1, "#F0E8D8")
-                    card.bgcolor = "#FFFBF0"
+                    card.border = ft.border.all(1, "#F3CDD8" if is_demo_card else "#F0E8D8")
+                    card.bgcolor = "#FFF7FA" if is_demo_card else "#FFFBF0"
             ask_button.visible = True
             write_button.visible = True
             self._page.update()
@@ -1112,6 +1400,8 @@ class HomeView:
             raw_content = entry.get("content", "")
             body, reason = self._extract_reason(raw_content)
             log_id = entry.get("id")
+            is_demo = '"temporary_demo":true' in raw_content.replace(" ", "")
+            is_rule_based = '"rule_based":true' in raw_content.replace(" ", "")
 
             card_content: list[ft.Control] = [
                 ft.Container(
@@ -1130,13 +1420,30 @@ class HomeView:
             if reason:
                 card_content.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.LIGHTBULB_OUTLINE_ROUNDED, size=12, color="#C4A46C"),
-                        ft.Text(reason, size=11, color="#8C7A5E", expand=True,
+                        ft.Icon(
+                            ft.Icons.STARS_ROUNDED if is_demo else ft.Icons.LIGHTBULB_OUTLINE_ROUNDED,
+                            size=12,
+                            color="#D97C93" if is_demo else "#C4A46C",
+                        ),
+                        ft.Text(reason, size=11, color="#9A5C70" if is_demo else "#8C7A5E", expand=True,
                                 max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
-                    bgcolor="#FAF5EB",
+                    bgcolor="#FFF1F5" if is_demo else "#FAF5EB",
                     border_radius=6,
                     padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                ))
+
+            if is_demo:
+                card_content.insert(0, ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.CELEBRATION_ROUNDED, size=14, color="#D97C93"),
+                        ft.Text("DEMO PICK", size=11, weight=ft.FontWeight.W_700, color="#D97C93"),
+                        ft.Text("RULE BASED", size=10, weight=ft.FontWeight.W_700,
+                                color="#B85C78") if is_rule_based else ft.Container(),
+                    ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor="#FFE4EC",
+                    border_radius=999,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
                 ))
 
             card = ft.Container(
@@ -1157,8 +1464,8 @@ class HomeView:
                     ),
                 ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
                 padding=ft.padding.symmetric(vertical=6, horizontal=8),
-                bgcolor="#FFFBF0",
-                border=ft.border.all(1, "#F0E8D8"),
+                bgcolor="#FFF7FA" if is_demo else "#FFFBF0",
+                border=ft.border.all(1, "#F3CDD8" if is_demo else "#F0E8D8"),
                 border_radius=14,
                 on_click=lambda e, idx=i: _select_suggestion(idx),
                 ink=True,
@@ -1442,41 +1749,144 @@ class HomeView:
     # ==================================================================
     # Widget: 通知
     # ==================================================================
-    def _widget_notifications(self) -> ft.Container:
-        items: list[ft.Control] = []
+    @staticmethod
+    def _notification_meta(entry: dict) -> tuple[str, str, str]:
+        action_type = entry.get("action_type", "")
+        raw_content = entry.get("content", "")
+        display_content = raw_content
+        if action_type == "notify_scheduled" and "] " in raw_content:
+            display_content = raw_content.split("] ", 1)[1]
+        time_str = entry.get("triggered_at", "")[:16].replace("T", " ")
+        return action_type, display_content, time_str
+
+    def _get_notification_entries(self, limit: int = 30) -> list[dict]:
+        entries: list[dict] = []
         try:
-            logs = db_client.get_machine_logs(limit=30)
+            logs = db_client.get_machine_logs(limit=limit)
             for entry in logs:
-                at = entry.get("action_type", "")
-                if at not in ("notify", "notify_scheduled"):
-                    continue
-                content = entry.get("content", "")
-                log_id = entry.get("id")
-                time_str = entry.get("triggered_at", "")[:16].replace("T", " ")
-                icon_map = {
-                    "notify": (ft.Icons.NOTIFICATIONS_ACTIVE_ROUNDED, GREEN),
-                    "notify_scheduled": (ft.Icons.SCHEDULE_ROUNDED, BLUE),
-                }
-                ic, clr = icon_map.get(at, (ft.Icons.CIRCLE, MID_TEXT))
-                type_label = "即時通知" if at == "notify" else "予約通知"
-                items.append(ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ic, size=18, color=clr),
-                        ft.Column([
-                            ft.Text(content, size=14, color=DARK_TEXT,
-                                    max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                            ft.Text(time_str, size=12, color=LIGHT_TEXT),
-                        ], spacing=1, expand=True),
-                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.padding.symmetric(vertical=4),
-                    on_click=lambda e, c=content, ts=time_str, tl=type_label, cl=clr,
-                                    lid=log_id: self._show_detail(
-                        "通知", [("内容", c), ("種類", tl), ("日時", ts)], cl,
-                        on_delete=lambda lid=lid: self._delete_log(lid)),
-                    ink=True, border_radius=8,
-                ))
+                if entry.get("action_type") in ("notify", "notify_scheduled"):
+                    entries.append(entry)
         except Exception:
             pass
+        return entries
+
+    def _widget_notify_spotlight(self) -> ft.Container:
+        entries = self._get_notification_entries(limit=30)
+        latest = entries[0] if entries else None
+        action_type, message, time_str = self._notification_meta(latest or {})
+        is_scheduled = action_type == "notify_scheduled"
+        accent = PURPLE if is_scheduled else CORAL
+        soft_bg = "#FFF1F4" if not is_scheduled else "#F4F0FF"
+        soft_border = "#F3CDD8" if not is_scheduled else "#DDD3FF"
+        badge_bg = "#FFE3EC" if not is_scheduled else "#ECE5FF"
+        icon = ft.Icons.AUTO_AWESOME_ROUNDED if not is_scheduled else ft.Icons.SCHEDULE_ROUNDED
+        title = "今の通知" if not is_scheduled else "まもなく届く通知"
+
+        if not latest:
+            message = "notify() のメッセージはここに大きく表示されます"
+            time_str = "まだ通知はありません"
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        content=ft.Icon(icon, size=22, color=accent),
+                        width=42,
+                        height=42,
+                        border_radius=14,
+                        bgcolor=badge_bg,
+                        alignment=ft.Alignment(0, 0),
+                    ),
+                    ft.Column([
+                        ft.Text(title, size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                        ft.Text(
+                            "ホームに大きく出るデモ用 notify プレビュー",
+                            size=11,
+                            color=MID_TEXT,
+                        ),
+                    ], spacing=2, expand=True),
+                    ft.Container(
+                        content=ft.Text(
+                            "notify",
+                            size=11,
+                            weight=ft.FontWeight.W_700,
+                            color=accent,
+                        ),
+                        padding=ft.padding.symmetric(horizontal=10, vertical=6),
+                        border_radius=999,
+                        bgcolor=badge_bg,
+                    ),
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=8),
+                ft.Container(
+                    content=ft.Text(
+                        message,
+                        size=24,
+                        weight=ft.FontWeight.W_700,
+                        color=DARK_TEXT,
+                    ),
+                    bgcolor="#FFFFFFBB",
+                    border_radius=18,
+                    padding=ft.padding.symmetric(horizontal=18, vertical=18),
+                    border=ft.border.all(1, "#FFFFFF"),
+                ),
+                ft.Container(height=8),
+                ft.Row([
+                    ft.Icon(ft.Icons.ACCESS_TIME_ROUNDED, size=14, color=LIGHT_TEXT),
+                    ft.Text(time_str or "たった今", size=12, color=LIGHT_TEXT),
+                    ft.Container(width=10),
+                    ft.Icon(
+                        ft.Icons.ROCKET_LAUNCH_ROUNDED if not is_scheduled else ft.Icons.TIMER_ROUNDED,
+                        size=14,
+                        color=accent,
+                    ),
+                    ft.Text(
+                        "すぐ見せたい通知に向いています" if not is_scheduled else "after トリガーで発火できます",
+                        size=12,
+                        color=accent,
+                        weight=ft.FontWeight.W_600,
+                    ),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=0),
+            bgcolor=soft_bg,
+            border=ft.border.all(1, soft_border),
+            border_radius=24,
+            padding=18,
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=20,
+                color=f"{accent}22",
+                offset=ft.Offset(0, 6),
+            ),
+        )
+
+    def _widget_notifications(self) -> ft.Container:
+        items: list[ft.Control] = []
+        for entry in self._get_notification_entries(limit=30):
+            at, content, time_str = self._notification_meta(entry)
+            log_id = entry.get("id")
+            icon_map = {
+                "notify": (ft.Icons.NOTIFICATIONS_ACTIVE_ROUNDED, GREEN),
+                "notify_scheduled": (ft.Icons.SCHEDULE_ROUNDED, BLUE),
+            }
+            ic, clr = icon_map.get(at, (ft.Icons.CIRCLE, MID_TEXT))
+            type_label = "即時通知" if at == "notify" else "予約通知"
+            items.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon(ic, size=18, color=clr),
+                    ft.Column([
+                        ft.Text(content, size=14, color=DARK_TEXT,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(time_str, size=12, color=LIGHT_TEXT),
+                    ], spacing=1, expand=True),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(vertical=4),
+                on_click=lambda e, c=content, ts=time_str, tl=type_label, cl=clr,
+                                lid=log_id: self._show_detail(
+                    "通知", [("内容", c), ("種類", tl), ("日時", ts)], cl,
+                    on_delete=lambda lid=lid: self._delete_log(lid)),
+                ink=True, border_radius=8,
+            ))
 
         if not items:
             items.append(ft.Container(
@@ -2055,11 +2465,14 @@ class HomeView:
                 pass
 
         suggestion_type = meta.get("type", "calendar")
+        preset_dsl = meta.get("dsl")
 
         # 提案内容から LifeScript DSL を生成
         body, reason = self._extract_reason(content)
 
-        if suggestion_type == "calendar" and meta.get("event_title"):
+        if isinstance(preset_dsl, str) and preset_dsl.strip():
+            dsl = preset_dsl
+        elif suggestion_type == "calendar" and meta.get("event_title"):
             title = meta["event_title"]
             date_str = meta.get("event_date", "")
             time_str = meta.get("event_time", "09:00")
@@ -2090,7 +2503,7 @@ class HomeView:
 
         # IDE に遷移して DSL を挿入
         if self._on_open_ide:
-            self._on_open_ide(dsl)
+            self._on_open_ide(dsl, True)
         elif self._on_navigate:
             self._on_navigate(1)  # IDE画面に遷移（DSL挿入なし、フォールバック）
 
@@ -2112,6 +2525,14 @@ class HomeView:
                 meta = _json.loads(meta_match.group(1))
             except Exception:
                 pass
+
+        preset_dsl = meta.get("dsl")
+        if isinstance(preset_dsl, str) and preset_dsl.strip():
+            if self._on_open_ide:
+                self._on_open_ide(preset_dsl, True)
+            elif self._on_navigate:
+                self._on_navigate(1)
+            return
 
         # LLMを使ってLifeScript DSLを生成
         def _generate():
@@ -2176,7 +2597,7 @@ LifeScript DSL のコードのみを出力してください。
 
                 # IDEに遷移してDSLを挿入
                 if self._on_open_ide:
-                    self._on_open_ide(dsl)
+                    self._on_open_ide(dsl, True)
                 elif self._on_navigate:
                     self._on_navigate(1)
 

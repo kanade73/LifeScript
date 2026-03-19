@@ -5,8 +5,12 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..sandbox.runner import run_sandboxed, reset_rate_limits
@@ -70,7 +74,7 @@ class LifeScriptScheduler:
             scripts = db_client.get_scripts()
             for script in scripts:
                 if script.get("compiled_python"):
-                    self.add_script(script)
+                    self.add_script(script, trigger=self._load_trigger(script))
             log_queue.log("Scheduler", f"DBから{len(scripts)}件のスクリプトを読み込みました")
         except Exception as e:
             log_queue.log("Scheduler", f"スクリプトの読み込みに失敗しました: {e}", "ERROR")
@@ -89,6 +93,19 @@ class LifeScriptScheduler:
         if trigger and trigger.get("type") == "cron":
             ap_trigger = CronTrigger(hour=trigger["hour"], minute=trigger["minute"])
             desc = f"毎日 {trigger['hour']:02d}:{trigger['minute']:02d}"
+        elif trigger and trigger.get("type") == "after":
+            seconds = trigger["seconds"]
+            run_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+
+            def one_shot_job(sid=script_id, code=python_code, dsl=dsl_text) -> None:
+                try:
+                    self._run_script(sid, code, dsl)
+                finally:
+                    self._job_map.pop(sid, None)
+
+            job = one_shot_job
+            ap_trigger = DateTrigger(run_date=run_at)
+            desc = f"{seconds}秒後に1回"
         else:
             seconds = trigger["seconds"] if trigger and "seconds" in trigger else trigger_seconds
             ap_trigger = IntervalTrigger(seconds=seconds)
@@ -153,6 +170,21 @@ class LifeScriptScheduler:
         """スクリプトのトリガー情報を返す。"""
         return self._trigger_map.get(str(script_id), {"type": "interval", "seconds": 3600})
 
+    @staticmethod
+    def _load_trigger(script: dict) -> dict | None:
+        raw = script.get("trigger_json")
+        if not raw:
+            return None
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
+
     def is_paused(self, script_id: str) -> bool:
         return str(script_id) in self._paused
 
@@ -180,6 +212,10 @@ class LifeScriptScheduler:
         """スクリプトのトリガーを更新する。"""
         script_id = str(script_id)
         self._trigger_map[script_id] = trigger
+        try:
+            db_client.update_script(int(script_id), trigger_json=json.dumps(trigger, ensure_ascii=False))
+        except Exception as e:
+            log_queue.log("Scheduler", f"トリガー保存に失敗しました: {e}", "WARN")
         if script_id not in self._paused:
             self.add_script(script, trigger=trigger)
 
@@ -187,6 +223,8 @@ class LifeScriptScheduler:
         """トリガーの説明文を返す。"""
         if trigger.get("type") == "cron":
             return f"毎日 {trigger.get('hour', 0):02d}:{trigger.get('minute', 0):02d}"
+        if trigger.get("type") == "after":
+            return f"{trigger.get('seconds', 0)}秒後に1回"
         seconds = trigger.get("seconds", 3600)
         return self._describe_interval(seconds)
 
@@ -233,9 +271,12 @@ class LifeScriptScheduler:
             log_queue.log(f"Script#{script_id}", "LLMによる再コンパイルを試行中…", "WARN")
             result = self._compiler.recompile_with_error(dsl_text, old_python, error)
             new_python = result["code"]
-            db_client.update_script(int(script_id), compiled_python=new_python)
-
             trigger_dict = result.get("trigger", {"type": "interval", "seconds": 3600})
+            db_client.update_script(
+                int(script_id),
+                compiled_python=new_python,
+                trigger_json=json.dumps(trigger_dict, ensure_ascii=False),
+            )
             script = {"id": script_id, "compiled_python": new_python, "dsl_text": dsl_text}
             self.add_script(script, trigger=trigger_dict)
             log_queue.log(f"Script#{script_id}", "再コンパイルに成功しました")

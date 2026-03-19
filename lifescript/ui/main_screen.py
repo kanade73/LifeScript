@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 
 import flet as ft
@@ -210,6 +211,39 @@ _DEFAULT_DSL = ""
 # ── テンプレートギャラリー ─────────────────────────────────────────
 _TEMPLATES = [
     {
+        "icon": ft.Icons.CELEBRATION_ROUNDED,
+        "color": "#FF8FAB",
+        "title": "10秒後に発表メッセージを通知",
+        "desc": "デモ向けに notify を大きく見せたいときの短いテンプレートです",
+        "dsl": """\
+# デモ用: 10秒後に通知
+after 10s:
+  notify("発表お疲れさま！うまくいった？")
+""",
+    },
+    {
+        "icon": ft.Icons.ONDEMAND_VIDEO_ROUNDED,
+        "color": "#FFA94D",
+        "title": "30秒後にデモ動画用通知",
+        "desc": "説明中に動きが見える、rule-based の notify テンプレです",
+        "dsl": """\
+# デモ動画用 notify
+after 30s:
+  notify("ここから LifeScript が動き出すよ")
+""",
+    },
+    {
+        "icon": ft.Icons.TIMER_ROUNDED,
+        "color": "#7B8CFF",
+        "title": "50秒後に締めの通知",
+        "desc": "プレゼン後半の見せ場や展示用の固定演出に向いています",
+        "dsl": """\
+# 締めの notify
+after 50s:
+  notify("発表お疲れさま！うまくいった？")
+""",
+    },
+    {
         "icon": ft.Icons.CALENDAR_MONTH_ROUNDED,
         "color": "#4262FF",
         "title": "バイトが多い週に休息を提案",
@@ -362,7 +396,7 @@ _DSL_SH = {
     "default":   "#C5BFB3",   # warm gray: デフォルト
 }
 
-_DSL_KEYWORDS = {"when", "every", "if", "else", "repeat", "let", "and", "or", "not"}
+_DSL_KEYWORDS = {"when", "every", "after", "if", "else", "repeat", "let", "and", "or", "not"}
 _DSL_FUNCTIONS = {
     "notify", "calendar", "web", "widget", "gmail", "streak", "machine",
     "fetch", "add", "read", "suggest", "show", "send", "search",
@@ -382,6 +416,8 @@ _TAB_COLORS = [
     COLORS["yellow"], COLORS["blue"], COLORS["green"],
     COLORS["coral"], COLORS["purple"], COLORS["orange"],
 ]
+_EDITOR_FONT_SIZE = 13
+_EDITOR_TEXT_PADDING = ft.padding.only(left=12, top=8, right=16, bottom=16)
 
 
 # ======================================================================
@@ -412,41 +448,15 @@ class EditorView:
         self._tabs: list[_Tab] = [_Tab(name="script.ls", dsl_text=_DEFAULT_DSL)]
         self._active_tab: _Tab = self._tabs[0]
 
-        # ── DSL Editor（シンタックスハイライト付きオーバーレイ）───
-        # 背景: ハイライト済みテキスト（読み取り専用表示）
-        self._dsl_highlight_text = ft.Text(
-            spans=_highlight_dsl(_DEFAULT_DSL),
-            size=13,
-        )
-        self._dsl_highlight_layer = ft.Container(
-            content=self._dsl_highlight_text,
-            padding=ft.padding.only(left=48, top=16, right=16, bottom=16),
-        )
-
-        # 行番号ガター
-        self._line_numbers = ft.Text(
-            value=self._make_line_numbers(_DEFAULT_DSL),
-            size=13,
-            color="#8A8478",
-            font_family=_CODE_FONT,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._line_number_gutter = ft.Container(
-            content=self._line_numbers,
-            width=36,
-            padding=ft.padding.only(top=16, right=4),
-            alignment=ft.Alignment(1, -1),  # top_right
-            border=ft.border.only(right=ft.BorderSide(1, "#4A4438")),
-        )
-
-        # 前面: 透明テキストの編集用TextField
+        # ── DSL Editor（入力のしやすさ優先の単一 TextField）────────
         self._editor = ft.TextField(
             value=_DEFAULT_DSL,
             multiline=True,
-            min_lines=16,
+            expand=True,
             text_style=ft.TextStyle(
                 font_family=_CODE_FONT,
-                size=13, color="#00000000",  # 完全透明（ハイライト層を見せる）
+                size=_EDITOR_FONT_SIZE,
+                color=COLORS["editor_fg"],
             ),
             bgcolor=ft.Colors.TRANSPARENT,
             border_color=ft.Colors.TRANSPARENT,
@@ -455,27 +465,10 @@ class EditorView:
             cursor_color=COLORS["blue"],
             hint_text="やりたいことを書いてみよう — テンプレートから選ぶこともできます",
             hint_style=ft.TextStyle(color=COLORS["light_text"]),
-            content_padding=ft.padding.only(left=48, top=16, right=16, bottom=16),
+            content_padding=_EDITOR_TEXT_PADDING,
             on_change=self._on_editor_change,
         )
         self._prev_editor_value = _DEFAULT_DSL
-
-        # ── ミニマップ（コードの縮小表示）───────────────────────
-        self._minimap_text = ft.Text(
-            value=_DEFAULT_DSL,
-            size=2,
-            color="#8A8478",
-            font_family=_CODE_FONT,
-        )
-        self._minimap = ft.Container(
-            content=self._minimap_text,
-            width=60,
-            bgcolor="#2B2620",
-            padding=ft.padding.symmetric(horizontal=4, vertical=8),
-            border=ft.border.only(left=ft.BorderSide(1, "#4A4438")),
-            alignment=ft.Alignment(-1, -1),  # top_left
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        )
 
         # ── テンプレートギャラリー（エディタが空のとき表示）───────
         self._template_gallery = self._build_template_gallery()
@@ -483,38 +476,15 @@ class EditorView:
         # ── タブバー ──────────────────────────────────────────
         self._tab_bar = ft.Row(spacing=2, scroll=ft.ScrollMode.AUTO)
 
-        # TextFieldとHighlightを重ねるStack (expandを含めないことで高さを自動拡張)
-        self._inner_editor_stack = ft.Stack(
-            [self._dsl_highlight_layer, self._editor],
-        )
-
-        # 行番号とエディタを並べる
-        self._scrolling_editor_area = ft.Column(
-            [
-                ft.Row([
-                    self._line_number_gutter,
-                    self._inner_editor_stack
-                ], spacing=0)
-            ],
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
-            horizontal_alignment=ft.CrossAxisAlignment.START,
-        )
-
-        # Scrollerとミニマップを並べる
-        self._editor_content_row = ft.Row(
-            [
-                self._scrolling_editor_area,
-                self._minimap,
-            ],
-            spacing=0,
+        self._editor_surface = ft.Container(
+            content=self._editor,
             expand=True,
         )
 
         # テンプレートギャラリー用のStack
         self._main_editor_stack = ft.Stack(
             [
-                self._editor_content_row,
+                self._editor_surface,
                 self._template_gallery,
             ],
             expand=True,
@@ -687,6 +657,15 @@ class EditorView:
                     padding=ft.padding.symmetric(horizontal=14, vertical=10),
                 ),
                 on_click=lambda e: self._insert_snippet('every :\n  notify("")'),
+            ),
+            ft.OutlinedButton(
+                "after", style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=14),
+                    side=ft.BorderSide(1, COLORS["purple"]),
+                    color=COLORS["purple"],
+                    padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                ),
+                on_click=lambda e: self._insert_snippet('after 10s:\n  notify("")'),
             ),
             ft.OutlinedButton(
                 "when", style=ft.ButtonStyle(
@@ -1050,24 +1029,20 @@ class EditorView:
 
     def _select_template(self, tmpl: dict) -> None:
         """テンプレートをエディタに挿入してギャラリーを非表示にする。"""
-        self._editor.value = tmpl["dsl"]
-        self._active_tab.dsl_text = tmpl["dsl"]
-        self._prev_editor_value = tmpl["dsl"]
-        self._dsl_highlight_text.spans = _highlight_dsl(tmpl["dsl"])
-        self._template_gallery.visible = False
+        self._apply_editor_text(tmpl["dsl"], show_gallery=False, focus=True)
         self._page.update()
 
     def _dismiss_gallery(self) -> None:
         """テンプレートギャラリーを非表示にしてエディタにフォーカス。"""
         self._template_gallery.visible = False
-        self._editor.focus()
+        self._focus_control(self._editor)
         self._page.update()
 
     def _focus_chat(self) -> None:
         """サイドバーをChatに切り替えてチャット入力にフォーカス。"""
         self._template_gallery.visible = False
         self._switch_sidebar("chat")
-        self._chat_input.focus()
+        self._focus_control(self._chat_input)
         self._page.update()
 
     def _update_gallery_visibility(self) -> None:
@@ -1102,20 +1077,35 @@ class EditorView:
 
         self._page.on_keyboard_event = _on_keyboard
 
-    @staticmethod
-    def _make_line_numbers(code: str) -> str:
-        """コードの行数に応じた行番号文字列を生成する。"""
-        lines = (code or "").split("\n")
-        count = max(len(lines), 1)
-        return "\n".join(str(i + 1) for i in range(count))
-
     def _update_editor_decorations(self, val: str) -> None:
-        """行番号とミニマップを更新する。"""
-        self._line_numbers.value = self._make_line_numbers(val)
-        self._minimap_text.value = val or ""
+        """エディタ補助表示を更新する。"""
+        return
+
+    async def _await_focus(self, focus_result) -> None:
+        """Flet の focus が coroutine の環境でも警告なく実行する。"""
+        await focus_result
+
+    def _focus_control(self, control) -> None:
+        """同期・非同期どちらの focus 実装でも安全に呼ぶ。"""
+        focus_result = control.focus()
+        if inspect.isawaitable(focus_result):
+            self._page.run_task(self._await_focus, focus_result)
+
+    def _apply_editor_text(self, text: str, *, show_gallery: bool | None = None, focus: bool = False) -> None:
+        """プログラム側からエディタ内容を安全に差し替える。"""
+        self._editor.value = text
+        self._prev_editor_value = text
+        self._active_tab.dsl_text = text
+        self._update_editor_decorations(text)
+        if show_gallery is None:
+            self._update_gallery_visibility()
+        else:
+            self._template_gallery.visible = show_gallery
+        if focus:
+            self._focus_control(self._editor)
 
     def _on_editor_change(self, e: ft.ControlEvent) -> None:
-        """改行時に自動インデント + DSLシンタックスハイライト更新。"""
+        """改行時に自動インデントし、補助表示を更新する。"""
         val = self._editor.value or ""
         prev = self._prev_editor_value or ""
         self._prev_editor_value = val
@@ -1123,8 +1113,7 @@ class EditorView:
         # テンプレートギャラリーの表示切替
         self._update_gallery_visibility()
 
-        # ハイライト・行番号・ミニマップ更新
-        self._dsl_highlight_text.spans = _highlight_dsl(val)
+        # 補助表示更新
         self._update_editor_decorations(val)
 
         # 改行が追加されたか検出（文字数が1増えて末尾が改行）
@@ -1211,7 +1200,7 @@ class EditorView:
         self._active_tab = tab
         self._editor.value = tab.dsl_text
         self._prev_editor_value = tab.dsl_text
-        self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
+        self._update_editor_decorations(tab.dsl_text)
         self._update_gallery_visibility()
         compiled = tab.compiled
         if compiled:
@@ -1227,7 +1216,7 @@ class EditorView:
         self._tabs.append(tab)
         self._active_tab = tab
         self._editor.value = ""
-        self._dsl_highlight_text.spans = _highlight_dsl("")
+        self._update_editor_decorations("")
         self._template_gallery.visible = True  # 新規タブはギャラリー表示
         self._set_preview("# コンパイル結果がここに表示されます")
         self._rebuild_tab_bar()
@@ -1242,7 +1231,7 @@ class EditorView:
             new_idx = min(idx, len(self._tabs) - 1)
             self._active_tab = self._tabs[new_idx]
             self._editor.value = self._active_tab.dsl_text
-            self._dsl_highlight_text.spans = _highlight_dsl(self._active_tab.dsl_text)
+            self._update_editor_decorations(self._active_tab.dsl_text)
             compiled = self._active_tab.compiled
             self._set_preview(compiled.get("code", "") if compiled else "# コンパイル結果がここに表示されます")
         self._update_gallery_visibility()
@@ -1413,7 +1402,7 @@ class EditorView:
         self._editor.value = current + code
         self._active_tab.dsl_text = self._editor.value
         self._prev_editor_value = self._editor.value
-        self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
+        self._update_editor_decorations(self._editor.value)
         self._template_gallery.visible = False
         self._log(f"チャットからDSLを挿入しました", COLORS["green"])
         self._page.update()
@@ -1459,11 +1448,11 @@ class EditorView:
             current += "\n"
         self._editor.value = current + snippet
         self._active_tab.dsl_text = self._editor.value
-        self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
+        self._update_editor_decorations(self._editor.value)
         self._template_gallery.visible = False
         self._page.update()
 
-    def prefill_dsl(self, dsl_code: str, tab_name: str = "") -> None:
+    def prefill_dsl(self, dsl_code: str, tab_name: str = "", instant: bool = False) -> None:
         """外部から新規タブにDSLコードを挿入する（提案→IDE遷移用）。
 
         タイプライターエフェクト付き: ダリーがリアルタイムでコードを書く演出。
@@ -1474,10 +1463,18 @@ class EditorView:
         self._active_tab = tab
         self._editor.value = ""
         self._prev_editor_value = ""
-        self._dsl_highlight_text.spans = []
+        self._update_editor_decorations("")
         self._template_gallery.visible = False
         self._set_preview("")
         self._rebuild_tab_bar()
+        if instant:
+            self._editor.value = dsl_code
+            self._active_tab.dsl_text = dsl_code
+            self._prev_editor_value = dsl_code
+            self._update_editor_decorations(dsl_code)
+            self._page.update()
+            return
+
         self._page.update()
 
         # タイプライターアニメーションをバックグラウンドで実行
@@ -1512,7 +1509,7 @@ class EditorView:
             i += chunk_size
 
             self._editor.value = current
-            self._dsl_highlight_text.spans = _highlight_dsl(current)
+            self._update_editor_decorations(current)
             self._page.update()
             time.sleep(delay)
 
@@ -1816,6 +1813,8 @@ class EditorView:
                 self._log("トリガー: 即時実行（▶ Run で実行）", COLORS["mid_text"])
             elif tt == "cron":
                 self._log(f'トリガー: 毎日 {trigger["hour"]:02d}:{trigger["minute"]:02d}', COLORS["mid_text"])
+            elif tt == "after":
+                self._log(f'トリガー: {trigger.get("seconds", 10)}秒後に1回実行', COLORS["mid_text"])
             else:
                 self._log(f'トリガー: {trigger.get("seconds", 3600)}秒ごと', COLORS["mid_text"])
             self._log("✅ コンパイル完了 — Run または Save で続行", COLORS["green"])
@@ -1847,6 +1846,7 @@ class EditorView:
     def _run_once(self, code: str) -> None:
         from ..sandbox.runner import run_sandboxed
         from ..exceptions import SandboxError
+        import time as _time
 
         if not code:
             self._log("エディタが空です", COLORS["yellow"])
@@ -1860,6 +1860,27 @@ class EditorView:
 
         result = self._active_tab.compiled
         python_code = result["code"]
+        trigger = result.get("trigger", {"type": "once"})
+
+        if trigger.get("type") == "after":
+            seconds = max(int(trigger.get("seconds", 1)), 1)
+            self._log(f"{seconds}秒後に実行を予約しました", COLORS["blue"])
+            self._set_preview(f"# {seconds}秒後に実行予定…")
+            self._page.update()
+
+            def _delayed_run() -> None:
+                _time.sleep(seconds)
+                try:
+                    output = run_sandboxed(python_code, timeout=30, capture=True)
+                    self._set_preview(f"# 実行結果\n# {'=' * 40}\n\n{output or '(出力なし)'}")
+                    self._log("遅延実行が完了しました", COLORS["green"])
+                except SandboxError as e:
+                    self._set_preview(f"# 実行エラー\n# {'=' * 40}\n\n{e}")
+                    self._log(f"実行エラー: {e}", COLORS["coral"])
+                self._page.update()
+
+            threading.Thread(target=_delayed_run, daemon=True).start()
+            return
 
         self._log("実行中…", COLORS["blue"])
         if hasattr(self, "_switch_bottom_tab"):
@@ -1903,6 +1924,7 @@ class EditorView:
                 dsl_text=code,
                 compiled_python=result["code"],
                 name=tab.name,
+                trigger=trigger_dict,
             )
             tab.script_id = str(script["id"])
             self._scheduler.add_script(script, trigger=trigger_dict)
@@ -1939,9 +1961,7 @@ class EditorView:
         
         # エディタのUI状態を更新
         self._editor.value = tab.dsl_text
-        self._dsl_highlight_text.spans = _highlight_dsl(tab.dsl_text)
-        self._line_numbers.value = self._make_line_numbers(tab.dsl_text)
-        self._minimap_text.value = tab.dsl_text
+        self._update_editor_decorations(tab.dsl_text)
         
         self._update_gallery_visibility()
         self._set_preview(script.get("compiled_python", "# (empty)"))

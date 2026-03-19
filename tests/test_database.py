@@ -48,6 +48,20 @@ class TestDatabaseClient:
         scripts2 = db.get_scripts()
         assert not any(s["id"] == script["id"] for s in scripts2)
 
+    def test_script_trigger_persistence(self, db):
+        trigger = {"type": "after", "seconds": 10}
+        script = db.save_script(dsl_text="test dsl", compiled_python='notify("x")', trigger=trigger)
+        fetched = db.get_script_by_id(script["id"])
+        assert fetched["trigger_json"]
+        assert '"type": "after"' in fetched["trigger_json"]
+
+        updated = {"type": "cron", "hour": 8, "minute": 30}
+        import json
+
+        db.update_script(script["id"], trigger_json=json.dumps(updated, ensure_ascii=False))
+        fetched2 = db.get_script_by_id(script["id"])
+        assert fetched2["trigger_json"] == json.dumps(updated, ensure_ascii=False)
+
     def test_event_crud(self, db):
         event = db.add_event(title="Meeting", start_at="2025-01-01T10:00:00+00:00")
         assert event["title"] == "Meeting"

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS scripts (
     name            TEXT DEFAULT '',
     dsl_text        TEXT NOT NULL,
     compiled_python TEXT DEFAULT '',
+    trigger_json    TEXT DEFAULT '',
     active          INTEGER DEFAULT 1,
     created_at      TEXT NOT NULL
 );
@@ -93,12 +95,21 @@ class _SupabaseBackend:
         return data
 
     # -- Scripts --------------------------------------------------------
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
+    def save_script(
+        self,
+        dsl_text: str,
+        compiled_python: str,
+        user_id: str = "local",
+        name: str = "",
+        trigger: dict | None = None,
+    ) -> dict:
         data: dict[str, Any] = {
             "dsl_text": dsl_text,
             "compiled_python": compiled_python,
             "active": True,
         }
+        if trigger is not None:
+            data["trigger_json"] = json.dumps(trigger, ensure_ascii=False)
         self._insert_uid(data, user_id)
         if name:
             data["name"] = name
@@ -106,8 +117,9 @@ class _SupabaseBackend:
             resp = self._client.table("scripts").insert(data).execute()
             return resp.data[0]
         except Exception:
-            # name カラムが未追加の場合はnameなしでリトライ
+            # 追加カラムが未反映な環境向けのフォールバック
             data.pop("name", None)
+            data.pop("trigger_json", None)
             resp = self._client.table("scripts").insert(data).execute()
             return resp.data[0]
 
@@ -127,8 +139,9 @@ class _SupabaseBackend:
         try:
             self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
         except Exception:
-            # name カラム未追加時のフォールバック
+            # 追加カラム未反映な環境向けのフォールバック
             kwargs.pop("name", None)
+            kwargs.pop("trigger_json", None)
             if kwargs:
                 self._client.table("scripts").update(kwargs).eq("id", script_id).execute()
 
@@ -250,6 +263,10 @@ class _SQLiteBackend:
             self._conn.execute("SELECT name FROM scripts LIMIT 1")
         except sqlite3.OperationalError:
             self._conn.execute("ALTER TABLE scripts ADD COLUMN name TEXT DEFAULT ''")
+        try:
+            self._conn.execute("SELECT trigger_json FROM scripts LIMIT 1")
+        except sqlite3.OperationalError:
+            self._conn.execute("ALTER TABLE scripts ADD COLUMN trigger_json TEXT DEFAULT ''")
         self._conn.commit()
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
@@ -273,10 +290,17 @@ class _SQLiteBackend:
             return dict(row) if row else None
 
     # -- Scripts --------------------------------------------------------
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "local", name: str = "") -> dict:
+    def save_script(
+        self,
+        dsl_text: str,
+        compiled_python: str,
+        user_id: str = "local",
+        name: str = "",
+        trigger: dict | None = None,
+    ) -> dict:
         cur = self._execute(
-            "INSERT INTO scripts (user_id, name, dsl_text, compiled_python, created_at) VALUES (?,?,?,?,?)",
-            (user_id, name, dsl_text, compiled_python, _now()),
+            "INSERT INTO scripts (user_id, name, dsl_text, compiled_python, trigger_json, created_at) VALUES (?,?,?,?,?,?)",
+            (user_id, name, dsl_text, compiled_python, json.dumps(trigger, ensure_ascii=False) if trigger else "", _now()),
         )
         return self.get_script_by_id(cur.lastrowid)
 
@@ -448,8 +472,15 @@ class DatabaseClient:
         return self._user_id
 
     # Scripts
-    def save_script(self, dsl_text: str, compiled_python: str, user_id: str = "", name: str = "") -> dict:
-        return self._b().save_script(dsl_text, compiled_python, user_id or self._uid(), name)
+    def save_script(
+        self,
+        dsl_text: str,
+        compiled_python: str,
+        user_id: str = "",
+        name: str = "",
+        trigger: dict | None = None,
+    ) -> dict:
+        return self._b().save_script(dsl_text, compiled_python, user_id or self._uid(), name, trigger)
 
     def get_scripts(self, user_id: str = "") -> list[dict]:
         return self._b().get_scripts(user_id or self._uid())
