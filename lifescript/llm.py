@@ -11,6 +11,10 @@ import time
 
 import litellm
 
+# LiteLLMのログレベルを設定（起動時の情報メッセージを抑制）
+litellm.suppress_debug_info = True
+litellm.set_verbose = False
+
 # フォールバックモデルの定義（環境変数で上書き可能）
 _FALLBACK_MODELS = [
     "gemini/gemini-2.0-flash",

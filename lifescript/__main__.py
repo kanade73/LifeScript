@@ -20,6 +20,9 @@ def main() -> None:
     load_dotenv(project_env)
     # 3. ~/.lifescript/.env（ユーザー設定）
     load_dotenv(Path.home() / ".lifescript" / ".env")
+    
+    # LiteLLMのログを抑制（.envより前に設定する場合のフォールバック）
+    os.environ.setdefault("LITELLM_LOG", "ERROR")
 
     from .compiler.compiler import Compiler
     from .scheduler.scheduler import LifeScriptScheduler
