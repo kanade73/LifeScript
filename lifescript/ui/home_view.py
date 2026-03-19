@@ -584,15 +584,16 @@ class HomeView:
             [ft.Container(
                 content=ft.Text(d, size=12, color=LIGHT_TEXT, text_align=ft.TextAlign.CENTER),
                 expand=True, alignment=ft.Alignment(0, 0),
-            ) for d in ["月", "火", "水", "木", "金", "土", "日"]],
+            ) for d in ["日", "月", "火", "水", "木", "金", "土"]],
             spacing=2,
         )
 
         # 日付グリッド（セル内にイベントを表示）
         rows = []
-        for week in cal_mod.monthcalendar(year, month):
+        sunday_first_calendar = cal_mod.Calendar(firstweekday=6)
+        for week in sunday_first_calendar.monthdayscalendar(year, month):
             cells = []
-            for day in week:
+            for weekday_idx, day in enumerate(week):
                 if day == 0:
                     cells.append(ft.Container(expand=True, height=62))
                 else:
@@ -600,11 +601,18 @@ class HomeView:
                     day_events = events_by_day.get(day, [])
                     holiday_name = holidays_by_day.get(day, "")
 
+                    # 日付数字の色: 土曜=青, 日曜/祝日=コーラル
+                    day_text_color = DARK_TEXT
+                    if holiday_name or weekday_idx == 0:
+                        day_text_color = CORAL
+                    elif weekday_idx == 6:
+                        day_text_color = BLUE
+
                     # 日番号
                     day_label = ft.Text(
                         str(day), size=12,
                         weight=ft.FontWeight.W_700 if is_today else ft.FontWeight.W_400,
-                        color=CARD_BG if is_today else DARK_TEXT,
+                        color=CARD_BG if is_today else day_text_color,
                     )
                     day_badge = ft.Container(
                         content=day_label,
