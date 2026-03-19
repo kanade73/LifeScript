@@ -8,10 +8,13 @@ class DataService: ObservableObject {
     @Published var suggestions: [MachineLog] = []
     @Published var notifications: [MachineLog] = []
     @Published var memories: [MachineLog] = []
+    @Published var observations: [MachineLog] = []
     @Published var reminders: [MachineLog] = []
     @Published var dynamicWidgets: [MachineLog] = []
     @Published var weekEventCount: Int = 0
     @Published var isLoading = false
+
+    var userId: String?
 
     func fetchAll() async {
         isLoading = true
@@ -19,6 +22,7 @@ class DataService: ObservableObject {
         async let suggs = fetchSuggestions()
         async let notifs = fetchNotifications()
         async let mems = fetchMemories()
+        async let obs = fetchObservations()
         async let rems = fetchReminders()
         async let dw = fetchDynamicWidgets()
         async let wec = fetchWeekEventCount()
@@ -27,6 +31,7 @@ class DataService: ObservableObject {
         suggestions = await suggs
         notifications = await notifs
         memories = await mems
+        observations = await obs
         reminders = await rems
         dynamicWidgets = await dw
         weekEventCount = await wec
@@ -46,10 +51,9 @@ class DataService: ObservableObject {
         let to = formatter.string(from: endOf3Days)
 
         do {
-            let events: [CalendarEvent] = try await supabase
-                .from("calendar_events")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("calendar_events").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let events: [CalendarEvent] = try await query
                 .gte("start_at", value: from)
                 .lte("start_at", value: to)
                 .order("start_at")
@@ -62,15 +66,14 @@ class DataService: ObservableObject {
         }
     }
 
-    // MARK: - Suggestions (calendar_suggest)
+    // MARK: - Suggestions (calendar_suggest + general_suggest)
 
     private func fetchSuggestions() async -> [MachineLog] {
         do {
-            let logs: [MachineLog] = try await supabase
-                .from("machine_logs")
-                .select()
-                .is("user_id", value: nil)
-                .eq("action_type", value: "calendar_suggest")
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
+                .or("action_type.eq.calendar_suggest,action_type.eq.general_suggest")
                 .order("id", ascending: false)
                 .limit(10)
                 .execute()
@@ -82,14 +85,32 @@ class DataService: ObservableObject {
         }
     }
 
+    // MARK: - Observations (memory_auto)
+
+    private func fetchObservations() async -> [MachineLog] {
+        do {
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
+                .eq("action_type", value: "memory_auto")
+                .order("id", ascending: false)
+                .limit(10)
+                .execute()
+                .value
+            return logs
+        } catch {
+            print("Observations fetch error: \(error)")
+            return []
+        }
+    }
+
     // MARK: - Notifications
 
     private func fetchNotifications() async -> [MachineLog] {
         do {
-            let logs: [MachineLog] = try await supabase
-                .from("machine_logs")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
                 .or("action_type.eq.notify,action_type.eq.notify_scheduled")
                 .order("id", ascending: false)
                 .limit(20)
@@ -106,10 +127,9 @@ class DataService: ObservableObject {
 
     private func fetchMemories() async -> [MachineLog] {
         do {
-            let logs: [MachineLog] = try await supabase
-                .from("machine_logs")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
                 .or("action_type.eq.memory,action_type.eq.memory_auto")
                 .order("id", ascending: false)
                 .limit(50)
@@ -126,10 +146,9 @@ class DataService: ObservableObject {
 
     private func fetchReminders() async -> [MachineLog] {
         do {
-            let logs: [MachineLog] = try await supabase
-                .from("machine_logs")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
                 .eq("action_type", value: "reminder")
                 .order("id", ascending: false)
                 .limit(10)
@@ -146,16 +165,14 @@ class DataService: ObservableObject {
 
     private func fetchDynamicWidgets() async -> [MachineLog] {
         do {
-            let logs: [MachineLog] = try await supabase
-                .from("machine_logs")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("machine_logs").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let logs: [MachineLog] = try await query
                 .like("action_type", pattern: "widget:%")
                 .order("id", ascending: false)
                 .limit(20)
                 .execute()
                 .value
-            // 各ウィジェット名の最新エントリだけ返す
             var seen: Set<String> = []
             var unique: [MachineLog] = []
             for log in logs {
@@ -185,10 +202,9 @@ class DataService: ObservableObject {
         let to = formatter.string(from: weekEnd)
 
         do {
-            let events: [CalendarEvent] = try await supabase
-                .from("calendar_events")
-                .select()
-                .is("user_id", value: nil)
+            var query = supabase.from("calendar_events").select()
+            if let uid = userId { query = query.eq("user_id", value: uid) }
+            let events: [CalendarEvent] = try await query
                 .gte("start_at", value: from)
                 .lte("start_at", value: to)
                 .execute()
@@ -203,39 +219,72 @@ class DataService: ObservableObject {
     // MARK: - Actions
 
     func approveSuggestion(_ log: MachineLog) async {
-        // メタデータからイベント情報を抽出
-        guard let _ = log.content.range(of: #"<!--meta:(.*?)-->"#, options: .regularExpression),
-              let jsonRange = log.content.range(of: #"(?<=<!--meta:).*?(?=-->)"#, options: .regularExpression),
-              let data = String(log.content[jsonRange]).data(using: .utf8),
-              let meta = try? JSONDecoder().decode(SuggestionMeta.self, from: data) else {
-            return
-        }
+        let type = log.suggestionType
 
-        let startAt = "\(meta.eventDate)T\(meta.eventTime):00+09:00"
+        if type == "calendar" {
+            // カレンダー提案 → イベント作成
+            guard let jsonRange = log.content.range(of: #"(?<=<!--meta:).*?(?=-->)"#, options: .regularExpression),
+                  let data = String(log.content[jsonRange]).data(using: .utf8),
+                  let meta = try? JSONDecoder().decode(SuggestionMeta.self, from: data) else {
+                return
+            }
 
-        do {
-            try await supabase
-                .from("calendar_events")
-                .insert([
+            let startAt = "\(meta.eventDate)T\(meta.eventTime):00+09:00"
+
+            do {
+                var eventPayload: [String: String] = [
                     "title": meta.eventTitle,
                     "start_at": startAt,
                     "source": "machine",
                     "note": "提案から承認",
-                ])
-                .execute()
+                ]
+                if let uid = userId { eventPayload["user_id"] = uid }
 
-            // 承認ログ
-            try await supabase
-                .from("machine_logs")
-                .insert([
+                try await supabase
+                    .from("calendar_events")
+                    .insert(eventPayload)
+                    .execute()
+
+                var logPayload: [String: String] = [
                     "action_type": "calendar_add",
                     "content": "提案を承認: 「\(meta.eventTitle)」",
-                ])
-                .execute()
+                ]
+                if let uid = userId { logPayload["user_id"] = uid }
 
-            await fetchAll()
-        } catch {
-            print("Approve error: \(error)")
+                try await supabase
+                    .from("machine_logs")
+                    .insert(logPayload)
+                    .execute()
+
+                await fetchAll()
+            } catch {
+                print("Approve calendar error: \(error)")
+            }
+        } else {
+            // notify提案 → 承認ログのみ
+            do {
+                var payload: [String: String] = [
+                    "action_type": "notify",
+                    "content": "提案を承認: 「\(log.bodyContent)」",
+                ]
+                if let uid = userId { payload["user_id"] = uid }
+
+                try await supabase
+                    .from("machine_logs")
+                    .insert(payload)
+                    .execute()
+
+                // 元の提案を削除
+                try await supabase
+                    .from("machine_logs")
+                    .delete()
+                    .eq("id", value: log.id)
+                    .execute()
+
+                await fetchAll()
+            } catch {
+                print("Approve notify error: \(error)")
+            }
         }
     }
 
@@ -249,6 +298,7 @@ class DataService: ObservableObject {
             "start_at": formatter.string(from: startAt),
             "source": "user",
         ]
+        if let uid = userId { payload["user_id"] = uid }
         if let endAt { payload["end_at"] = formatter.string(from: endAt) }
         if let note, !note.isEmpty { payload["note"] = note }
 
@@ -301,13 +351,16 @@ class DataService: ObservableObject {
     // MARK: - Reminder CRUD
 
     func addReminder(content: String) async {
+        var payload: [String: String] = [
+            "action_type": "reminder",
+            "content": content,
+        ]
+        if let uid = userId { payload["user_id"] = uid }
+
         do {
             try await supabase
                 .from("machine_logs")
-                .insert([
-                    "action_type": "reminder",
-                    "content": content,
-                ])
+                .insert(payload)
                 .execute()
             await fetchAll()
         } catch {

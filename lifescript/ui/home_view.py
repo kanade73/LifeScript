@@ -41,11 +41,13 @@ class HomeView:
 
     def __init__(self, page: ft.Page, scheduler: LifeScriptScheduler,
                  on_navigate: callable | None = None,
-                 on_ask_darii: callable | None = None) -> None:
+                 on_ask_darii: callable | None = None,
+                 on_open_ide: callable | None = None) -> None:
         self._page = page
         self._scheduler = scheduler
         self._on_navigate = on_navigate  # on_navigate(index) で画面遷移
         self._on_ask_darii = on_ask_darii  # on_ask_darii(message) でダリーに質問
+        self._on_open_ide = on_open_ide  # on_open_ide(dsl_code) でIDE遷移+DSL挿入
         self._logs: list[tuple[str, str, str]] = []
         self._cal_year = datetime.now().year
         self._cal_month = datetime.now().month
@@ -53,6 +55,7 @@ class HomeView:
         self._refresh_timer: threading.Timer | None = None
         self._is_active = False
         self._current_page = 0
+        self._analyzing = False  # 分析中フラグ
 
     def receive_logs(self, entries: list[tuple[str, str, str]]) -> None:
         self._logs = (entries + self._logs)[:50]
@@ -805,6 +808,23 @@ class HomeView:
         import re as _re
         return _re.sub(r"\n<!--meta:.*?-->", "", content).strip()
 
+    @staticmethod
+    def _extract_reason(content: str) -> tuple[str, str]:
+        """提案テキストから本文と理由を分離する。"""
+        import re as _re
+        # メタデータ除去
+        clean = _re.sub(r"\n<!--meta:.*?-->", "", content).strip()
+        # 理由行を分離
+        reason = ""
+        lines = clean.split("\n")
+        body_lines = []
+        for line in lines:
+            if line.startswith("理由: ") or line.startswith("理由:"):
+                reason = line.replace("理由: ", "").replace("理由:", "").strip()
+            else:
+                body_lines.append(line)
+        return "\n".join(body_lines).strip(), reason
+
     def _widget_machine(self) -> ft.Container:
         # ── サマリー行 ──
         now = datetime.now(_JST)
@@ -867,33 +887,54 @@ class HomeView:
 
         for i, entry in enumerate(suggestion_entries):
             raw_content = entry.get("content", "")
-            display = self._strip_meta(raw_content)
+            body, reason = self._extract_reason(raw_content)
             log_id = entry.get("id")
-            card = ft.Container(
-                content=ft.Row([
-                    ft.Container(
-                        content=ft.Markdown(
-                            display, selectable=False,
-                            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                            md_style_sheet=ft.MarkdownStyleSheet(
-                                p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
-                                strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
-                                list_bullet_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
-                            ),
+
+            card_content: list[ft.Control] = [
+                ft.Container(
+                    content=ft.Markdown(
+                        body, selectable=False,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                        md_style_sheet=ft.MarkdownStyleSheet(
+                            p_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
+                            strong_text_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                            list_bullet_text_style=ft.TextStyle(size=14, color=DARK_TEXT),
                         ),
-                        expand=True,
                     ),
-                    ft.IconButton(
-                        ft.Icons.CHECK_ROUNDED, icon_size=18, icon_color=GREEN,
-                        tooltip="承認", style=ft.ButtonStyle(padding=2),
-                        on_click=lambda e, ent=entry: self._accept_suggestion(ent),
-                    ),
-                    ft.IconButton(
-                        ft.Icons.CLOSE_ROUNDED, icon_size=16, icon_color=LIGHT_TEXT,
-                        tooltip="却下", style=ft.ButtonStyle(padding=2),
-                        on_click=lambda e, lid=log_id: self._delete_log(lid),
-                    ),
-                ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                ),
+            ]
+            # 根拠を目立たせる
+            if reason:
+                card_content.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.LIGHTBULB_OUTLINE_ROUNDED, size=12, color="#C4A46C"),
+                        ft.Text(reason, size=11, color="#8C7A5E", expand=True,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                    bgcolor="#FAF5EB",
+                    border_radius=6,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                ))
+
+            card = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Column(card_content, spacing=4),
+                            expand=True,
+                        ),
+                        ft.IconButton(
+                            ft.Icons.CHECK_ROUNDED, icon_size=18, icon_color=GREEN,
+                            tooltip="承認", style=ft.ButtonStyle(padding=2),
+                            on_click=lambda e, ent=entry: self._accept_suggestion(ent),
+                        ),
+                        ft.IconButton(
+                            ft.Icons.CLOSE_ROUNDED, icon_size=16, icon_color=LIGHT_TEXT,
+                            tooltip="却下", style=ft.ButtonStyle(padding=2),
+                            on_click=lambda e, lid=log_id: self._delete_log(lid),
+                        ),
+                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                ], spacing=0),
                 padding=ft.padding.symmetric(vertical=4, horizontal=8),
                 bgcolor="#FFFBF0",
                 border=ft.border.all(1, "#F0E8D8"),
@@ -904,19 +945,71 @@ class HomeView:
             suggestion_cards.append(card)
 
         if not suggestion_cards:
-            suggestion_cards.append(ft.Container(
-                content=ft.Text("ダリーからの提案はまだありません",
-                                size=13, color=LIGHT_TEXT, italic=True),
-                padding=ft.padding.symmetric(vertical=6),
-            ))
+            if self._analyzing:
+                suggestion_cards.append(ft.Container(
+                    content=ft.Row([
+                        ft.ProgressRing(width=16, height=16, stroke_width=2, color=ORANGE),
+                        ft.Text("ダリーが分析中…", size=13, color=MID_TEXT, italic=True),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.padding.symmetric(vertical=8),
+                ))
+            else:
+                suggestion_cards.append(ft.Container(
+                    content=ft.Text("ダリーからの提案はまだありません",
+                                    size=13, color=LIGHT_TEXT, italic=True),
+                    padding=ft.padding.symmetric(vertical=6),
+                ))
 
         # ── 分析ボタン ──
         def _on_analyze(e: ft.ControlEvent) -> None:
+            self._analyzing = True
+            self._refresh_content()
             import threading
             def _run() -> None:
-                self._scheduler.run_analysis_now()
-                self._page.update()
+                try:
+                    self._scheduler.run_analysis_now()
+                finally:
+                    self._analyzing = False
+                    self._refresh_content()
             threading.Thread(target=_run, daemon=True).start()
+
+        # ── ダリーの観察（パターン認識結果） ──
+        observation_items: list[ft.Control] = []
+        try:
+            all_logs = db_client.get_machine_logs(limit=100)
+            auto_mems = [l for l in all_logs if l.get("action_type") == "memory_auto"]
+            for mem in auto_mems[:3]:
+                obs_text = mem.get("content", "").strip()
+                if obs_text:
+                    observation_items.append(ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.VISIBILITY_ROUNDED, size=12, color="#B8A4D0"),
+                            ft.Text(obs_text, size=12, color="#7A6B8A", expand=True,
+                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                        ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        padding=ft.padding.symmetric(vertical=1),
+                    ))
+        except Exception:
+            pass
+
+        observations_section: list[ft.Control] = []
+        if observation_items:
+            observations_section = [
+                ft.Container(height=4),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, size=14, color="#A08CC0"),
+                            ft.Text("ダリーが学んだこと", size=12,
+                                    weight=ft.FontWeight.W_600, color="#A08CC0"),
+                        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        *observation_items,
+                    ], spacing=4),
+                    bgcolor="#F8F5FC",
+                    border_radius=10,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                ),
+            ]
 
         # ── ヘッダー凡例 + サマリー統合 ──
         legend = ft.Row([
@@ -951,6 +1044,7 @@ class HomeView:
                 ft.Divider(height=1, color=_BORDER),
                 ft.Column(suggestion_cards, spacing=6),
                 ask_button,
+                *observations_section,
             ], spacing=4),
             bgcolor=CARD_BG,
             border_radius=16,
@@ -981,88 +1075,6 @@ class HomeView:
                 time.sleep(0.3)
                 self._on_ask_darii(message)
             threading.Thread(target=_send_delayed, daemon=True).start()
-
-    # ==================================================================
-    # Widget: Gmail
-    # ==================================================================
-    def _widget_gmail(self) -> ft.Container | None:
-        """Google認証済みの場合のみGmailウィジェットを表示する。"""
-        from ..google_auth import is_authenticated, get_user_email
-
-        if not is_authenticated():
-            return None
-
-        email = get_user_email() or "Gmail"
-
-        # 未読メール取得（UIスレッドなので軽量に）
-        items: list[ft.Control] = []
-        try:
-            from ..google_auth import get_credentials
-            creds = get_credentials()
-            if creds:
-                from googleapiclient.discovery import build
-                service = build("gmail", "v1", credentials=creds)
-                results = service.users().messages().list(
-                    userId="me", q="is:unread", maxResults=5,
-                ).execute()
-                messages = results.get("messages", [])
-                unread_count = results.get("resultSizeEstimate", 0)
-
-                items.append(ft.Row([
-                    ft.Icon(ft.Icons.MARK_EMAIL_UNREAD_ROUNDED, size=14, color="#EA4335"),
-                    ft.Text(f"未読 {unread_count}件", size=12,
-                            weight=ft.FontWeight.W_600, color=DARK_TEXT),
-                ], spacing=6))
-
-                for m in messages[:3]:
-                    msg = service.users().messages().get(
-                        userId="me", id=m["id"], format="metadata",
-                        metadataHeaders=["Subject", "From"],
-                    ).execute()
-                    headers = {h["name"].lower(): h["value"]
-                               for h in msg.get("payload", {}).get("headers", [])}
-                    subject = headers.get("subject", "(件名なし)")
-                    sender = headers.get("from", "")
-                    # 差出人名だけ抽出
-                    if "<" in sender:
-                        sender = sender.split("<")[0].strip().strip('"')
-                    items.append(ft.Container(
-                        content=ft.Row([
-                            ft.Container(width=4, height=28, bgcolor="#EA4335", border_radius=2),
-                            ft.Column([
-                                ft.Text(subject, size=13, weight=ft.FontWeight.W_500,
-                                        color=DARK_TEXT, max_lines=1,
-                                        overflow=ft.TextOverflow.ELLIPSIS),
-                                ft.Text(sender, size=11, color=LIGHT_TEXT,
-                                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                            ], spacing=0, expand=True),
-                        ], spacing=8),
-                        padding=ft.padding.symmetric(vertical=2),
-                    ))
-                if not messages:
-                    items.append(ft.Text("未読メールはありません",
-                                         size=13, color=LIGHT_TEXT, italic=True))
-        except Exception:
-            items.append(ft.Text("メール取得に失敗しました",
-                                 size=12, color=CORAL, italic=True))
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.MAIL_ROUNDED, size=20, color="#EA4335"),
-                    ft.Text("Gmail", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
-                    ft.Container(expand=True),
-                    ft.Text(email.split("@")[0] if email else "",
-                            size=11, color=LIGHT_TEXT),
-                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                ft.Divider(height=1, color=_BORDER),
-                *items,
-            ], spacing=6),
-            bgcolor=CARD_BG,
-            border_radius=16,
-            padding=14,
-            border=ft.border.all(1, _BORDER),
-        )
 
     # ==================================================================
     # Widget: Gmail
@@ -1735,48 +1747,63 @@ class HomeView:
     # 提案の承認
     # ==================================================================
     def _accept_suggestion(self, entry: dict) -> None:
+        """提案を承認 → IDE に遷移して LifeScript を生成する。"""
         import json as _json
         import re as _re
 
         content = entry.get("content", "")
+        action_type = entry.get("action_type", "")
 
-        # メタデータからイベント情報を抽出
+        # メタデータ解析
         meta_match = _re.search(r"<!--meta:(.*?)-->", content)
+        meta = {}
         if meta_match:
             try:
                 meta = _json.loads(meta_match.group(1))
-                title = meta.get("event_title", "承認済みイベント")
-                date_str = meta.get("event_date", "")
-                time_str = meta.get("event_time", "09:00")
+            except _json.JSONDecodeError:
+                pass
 
-                if date_str:
-                    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-                    dt = dt.replace(tzinfo=_JST)
-                else:
-                    now = datetime.now(_JST)
-                    dt = (now + timedelta(days=1)).replace(
-                        hour=9, minute=0, second=0, microsecond=0)
-            except (ValueError, KeyError, _json.JSONDecodeError):
-                title, dt = self._fallback_parse(content)
+        suggestion_type = meta.get("type", "calendar")
+
+        # 提案内容から LifeScript DSL を生成
+        body, reason = self._extract_reason(content)
+
+        if suggestion_type == "calendar" and meta.get("event_title"):
+            title = meta["event_title"]
+            date_str = meta.get("event_date", "")
+            time_str = meta.get("event_time", "09:00")
+            iso = f"{date_str}T{time_str}:00" if date_str else ""
+            dsl = f'# {body.split(chr(10))[0]}\n'
+            dsl += f'calendar.add("{title}", start="{iso}")\n'
+            if reason:
+                dsl += f'\n# 根拠: {reason}\n'
+        elif suggestion_type == "notify":
+            # 通知系の提案
+            msg = body.split("\n")[0]
+            dsl = f'# {msg}\n'
+            dsl += f'notify("{msg}")\n'
+            if reason:
+                dsl += f'\n# 根拠: {reason}\n'
         else:
-            title, dt = self._fallback_parse(content)
+            # フォールバック
+            dsl = f'# 提案を承認\n'
+            dsl += f'notify("{body.split(chr(10))[0]}")\n'
 
-        db_client.add_event(title=title, start_at=dt.isoformat(), source="machine")
-        db_client.add_machine_log(
-            action_type="calendar_add",
-            content=f"提案を承認: 「{title}」を {dt.strftime('%m/%d %H:%M')} に追加しました",
-        )
-        self._page.update()
+        # 提案をログから削除
+        log_id = entry.get("id")
+        if log_id:
+            try:
+                db_client.delete_machine_log(log_id)
+            except Exception:
+                pass
 
-    @staticmethod
-    def _fallback_parse(content: str) -> tuple[str, datetime]:
-        """メタデータがない旧形式の提案からタイトルと日時を抽出する。"""
-        title = "承認済みイベント"
-        if "「" in content and "」" in content:
-            title = content.split("「")[1].split("」")[0]
-        now = datetime.now(_JST)
-        dt = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-        return title, dt
+        # IDE に遷移して DSL を挿入
+        if self._on_open_ide:
+            self._on_open_ide(dsl)
+        elif self._on_navigate:
+            self._on_navigate(1)  # IDE画面に遷移（DSL挿入なし、フォールバック）
+
+        self._refresh_content()
 
     # ==================================================================
     # 追加ダイアログ

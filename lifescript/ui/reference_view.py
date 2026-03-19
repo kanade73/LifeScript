@@ -214,6 +214,39 @@ class ReferenceView:
                     'gmail_send("friend@example.com", "今日の予定", "10時に集合です")',
                 ],
             },
+            {
+                "name": "machine.analyze",
+                "signature": "machine_analyze() -> list[dict]",
+                "color": YELLOW,
+                "desc": "コンテキスト分析を実行します。カレンダー・メール・traitsを総合的に分析し、"
+                        "提案をmachine_logsに自動生成します。ホーム画面の提案セクションに表示されます。",
+                "params": [
+                    ("(なし)", "", "引数なしで呼び出し可能"),
+                ],
+                "examples": [
+                    'machine_analyze()',
+                    '# 毎朝カレンダーとメールを分析\nwhen morning:\n  machine_analyze()',
+                ],
+                "note": "実行するとLLMを呼び出してカレンダー・メール・traitsを分析します。"
+                        "notify 1件 + calendar 2件の提案が自動生成されます。",
+            },
+            {
+                "name": "machine.suggest",
+                "signature": 'machine_suggest(message, reason?)',
+                "color": YELLOW,
+                "desc": "ダリーの提案をmachine_logsに直接書き込みます。"
+                        "ホーム画面の「ダリーの提案」セクションに通知として表示されます。",
+                "params": [
+                    ("message", "str", "提案メッセージ（ユーザーに見せる文）"),
+                    ("reason", "str", "提案の理由（省略可）"),
+                ],
+                "examples": [
+                    'machine_suggest("今日は早めに寝ましょう！")',
+                    'machine_suggest("傘を持って出かけましょう", reason="明日は雨の予報です")',
+                    '# 条件付き提案\nif calendar_read(keyword="バイト").count_this_week >= 4:\n'
+                    '  machine_suggest("今週はバイトが多いので休息を取りましょう", reason="バイトが4回以上")',
+                ],
+            },
         ]
 
         func_cards = []
@@ -313,6 +346,18 @@ class ReferenceView:
                     'when calendar.read(range="today") == []:\n'
                     '  notify("今日は予定がありません。自由に過ごしましょう！")',
                     "今日の予定がゼロなら通知を送ります。",
+                ),
+                self._example_block(
+                    "毎朝の文脈分析",
+                    'when morning:\n  machine.analyze()',
+                    "毎朝8時にカレンダー・メール・traitsを分析し、提案を自動生成します。",
+                ),
+                self._example_block(
+                    "条件付きマシン提案",
+                    'when calendar.read(keyword="バイト").count_this_week >= 4:\n'
+                    '  machine.suggest("今週はバイトが多いので休息日を作りましょう",\n'
+                    '                  reason="バイトが週4回以上")',
+                    "バイトが多い週にダリーが休息を提案します。",
                 ),
             ],
         )

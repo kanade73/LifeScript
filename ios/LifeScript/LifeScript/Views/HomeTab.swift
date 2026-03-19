@@ -17,6 +17,9 @@ struct HomeTab: View {
                     // ── マシンの提案 ──
                     suggestionsSection
 
+                    // ── ダリーが学んだこと ──
+                    observationsSection
+
                     // ── 通知 ──
                     notificationsSection
 
@@ -98,12 +101,11 @@ struct HomeTab: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(Color(hex: "FFA500"))
-                Text("Machine")
+                Text("ダリーの提案")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(Color(hex: "2D2B27"))
                 Spacer()
 
-                // 凡例
                 HStack(spacing: 3) {
                     Image(systemName: "calendar")
                         .font(.system(size: 10))
@@ -115,7 +117,7 @@ struct HomeTab: View {
             }
 
             if dataService.suggestions.isEmpty {
-                Text("マシンからの提案はまだありません")
+                Text("ダリーからの提案はまだありません")
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: "A09A93"))
                     .italic()
@@ -134,6 +136,48 @@ struct HomeTab: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "E8E4DC"), lineWidth: 1)
         )
+    }
+
+    // MARK: - Observations
+
+    private var observationsSection: some View {
+        Group {
+            if !dataService.observations.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "eye")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(Color(hex: "A08CC0"))
+                        Text("ダリーが学んだこと")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(Color(hex: "2D2B27"))
+                        Spacer()
+                        Text("\(dataService.observations.count)件")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "A09A93"))
+                    }
+
+                    ForEach(dataService.observations.prefix(5)) { obs in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Color(hex: "B8A4D0"))
+                                .frame(width: 6, height: 6)
+                            Text(obs.displayContent)
+                                .font(.system(size: 13))
+                                .foregroundColor(Color(hex: "7A6B8A"))
+                                .lineLimit(2)
+                        }
+                    }
+                }
+                .padding(16)
+                .background(Color(hex: "F8F5FC"))
+                .cornerRadius(16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color(hex: "E8E0F0"), lineWidth: 1)
+                )
+            }
+        }
     }
 
     // MARK: - Notifications
@@ -400,9 +444,36 @@ struct SuggestionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(log.displayContent)
+            // タイプバッジ
+            HStack(spacing: 4) {
+                Image(systemName: log.suggestionType == "calendar" ? "calendar.badge.plus" : "bell.badge")
+                    .font(.system(size: 11))
+                    .foregroundColor(log.suggestionType == "calendar" ? Color(hex: "4262FF") : Color(hex: "FFA500"))
+                Text(log.suggestionType == "calendar" ? "カレンダー提案" : "通知提案")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color(hex: "6B6560"))
+                Spacer()
+            }
+
+            Text(log.bodyContent)
                 .font(.system(size: 14))
                 .foregroundColor(Color(hex: "2D2B27"))
+
+            // 理由表示
+            if let reason = log.reason {
+                HStack(spacing: 6) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(hex: "C4A46C"))
+                    Text(reason)
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "8C7A5E"))
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .background(Color(hex: "FAF5EB"))
+                .cornerRadius(8)
+            }
 
             HStack(spacing: 12) {
                 Spacer()

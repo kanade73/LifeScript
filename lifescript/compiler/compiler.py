@@ -46,10 +46,15 @@ LifeScript の DSL は YAML 風の宣言的記法です:
 | `web.fetch(url, summary=False)` | `web_fetch(url, summary=False)` |
 | `widget.show(name, content)` | `widget_show(name, content)` |
 | `widget.show(name, content, icon="rss_feed")` | `widget_show(name, content, icon="rss_feed")` |
+| `machine.analyze()` | `machine_analyze()` |
+| `machine.suggest("message")` | `machine_suggest("message")` |
+| `machine.suggest("message", reason="理由")` | `machine_suggest("message", reason="理由")` |
 
 自然言語で書かれたルールも Python に変換してください。
 例: 「バイトが週4以上なら回復タイムを提案」→ if calendar_read(keyword="バイト").count_this_week >= 4: calendar_suggest(...)
 例: 「このサイトを毎日まとめて」→ result = web_fetch("url"); widget_show("サイト名", result)
+例: 「カレンダーとメールを分析して提案して」→ machine_analyze()
+例: 「今日は早く寝ようと提案して」→ machine_suggest("今日は早めに寝ましょう！", reason="明日の予定に備えて")
 
 ## トリガー（実行タイミング）
 

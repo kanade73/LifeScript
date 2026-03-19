@@ -1,7 +1,7 @@
 # LifeScript 仕様書
 
 > HackU Frontier 向け実装仕様  
-> 最終更新: 2026-03-14
+> 最終更新: 2026-03-19
 
 ---
 
@@ -67,13 +67,18 @@ LifeScriptの本質  → 人間が「自分の文脈」を渡すと、
 | `calendar.read()` | `calendar.read(keyword?: str, range?: str) -> list[Event]` | Supabaseからイベントを取得。keyword="バイト"でタイトル絞り込み、range="this_week"で期間指定。count_this_week属性でカウント可。 |
 | `calendar.suggest()` | `calendar.suggest(title: str, on: str, note?: str)` | イベントの提案をmachine_logsに書き込み、iOSのホーム画面に提案カードとして表示。ユーザーが承認するとcalendar.add()が実行される。 |
 
-#### Phase 2 — ハッカソン当日向け
+#### Phase 2 — ハッカソン当日向け（実装済み）
 
 | 関数 | シグネチャ | 説明 |
 |---|---|---|
-| `user.context()` | `user.context(key?: str) -> dict` | Supabaseのpersonality_jsonから文脈を取得。key指定でピンポイント取得（例: user.context("morning_type")）。LLMへの文脈渡しに使用。 |
-| `streak.count()` | `streak.count(habit_name: str) -> int` | streaksテーブルから指定習慣の継続日数を返す。habit_nameが一致しない場合は0を返す。streak.update()で日次更新。 |
-| `machine.suggest()` | `machine.suggest(message: str, action?: callable)` | マシンキャラクターとしての能動的な提案。machine_logsに記録しiOSに通知。actionを渡すとユーザー承認時に実行される。 |
+| `machine.analyze()` | `machine.analyze() -> list[dict]` | コンテキスト分析を実行。カレンダー・メール・traitsをLLMで分析し、提案（notify 1件 + calendar 2件）をmachine_logsに自動生成。 |
+| `machine.suggest()` | `machine.suggest(message: str, reason?: str)` | ダリーの提案をmachine_logsに直接書き込む。ホーム画面の提案セクションに通知として表示される。reasonで理由を付与可能。 |
+| `web.fetch()` | `web.fetch(url: str, summary?: bool) -> str` | URLの内容を取得しLLMで要約して返す。summary=Falseで生テキスト。widget_showと組み合わせ可。 |
+| `widget.show()` | `widget.show(name: str, content: str, icon?: str)` | ホーム画面にカスタムウィジェットを表示/更新する。スクリプト実行のたびに内容が最新化される。 |
+| `gmail.unread()` | `gmail.unread(limit?: int) -> list[dict]` | 未読メールを取得。各要素は {subject, from, date, snippet, body}。Google認証が必要。 |
+| `gmail.search()` | `gmail.search(query: str, limit?: int) -> list[dict]` | Gmailを検索。Gmail検索構文が使える。Google認証が必要。 |
+| `gmail.summarize()` | `gmail.summarize(limit?: int) -> str` | 未読メールをLLMで要約して返す。widget_showと組み合わせ可。Google認証が必要。 |
+| `gmail.send()` | `gmail.send(to: str, subject: str, body: str) -> str` | メールを送信する。Google認証が必要。 |
 
 #### 将来実装
 
@@ -98,9 +103,18 @@ traits:
 when calendar.read("バイト").count_this_week >= 4:
   calendar.suggest("回復タイム", on="next_free_morning")
 
-# Phase 2: 文脈を読んだ能動的提案
-when streak.count("運動") >= 7:
-  machine.suggest("1週間継続！次の目標を設定しようか？")
+# Phase 2: 文脈分析 + 能動的提案（実装済み）
+every day:
+  machine.analyze()   # カレンダー・メール・traitsを分析して提案生成
+
+when calendar.read("バイト").count_this_week >= 4:
+  machine.suggest("今週はバイトが多いので休息日を作りましょう",
+                  reason="バイトが週4回以上")
+
+# メール要約をウィジェットに表示
+when morning:
+  summary = gmail.summarize()
+  widget.show("メール要約", summary, icon="mail")
 
 # 将来: 外部状態トリガー
 when weather.get().condition == "rain" and time == "morning":
@@ -133,7 +147,7 @@ RestrictedPython（検証・サンドボックス）
 APScheduler（ジョブ登録）
 ```
 
-> **重要**: compile時のみLLM呼び出し。実行時はLLMを使用しない → コスト最小化
+> **重要**: 基本的にcompile時のみLLM呼び出し → コスト最小化。例外: `machine.analyze()` と `gmail.summarize()` は実行時にもLLMを使用する。
 
 ---
 
@@ -338,9 +352,12 @@ iOSへ通知（DB経由ポーリング または プッシュ）
 | `functions/notify.py` | `notify()` の実装 | **必須** |
 | `functions/calendar.py` | `calendar.*` の実装（Supabase CRUD） | **必須** |
 | `api.py` | iOSから叩くREST APIエンドポイント | **必須** |
-| `functions/machine.py` | `machine.suggest()` ・machine_logs書き込み | 欲しい |
+| `functions/machine.py` | `machine.analyze()` / `machine.suggest()` — 能動的提案 | **実装済み** |
+| `functions/gmail.py` | `gmail.*` の実装（Gmail API連携） | **実装済み** |
+| `functions/web.py` | `web.fetch()` — URL取得・要約 | **実装済み** |
+| `functions/widget.py` | `widget.show()` — ホーム画面ウィジェット | **実装済み** |
+| `context_analyzer.py` | カレンダー・メール・traits分析 → 提案生成（LLM使用） | **実装済み** |
 | `functions/streak.py` | `streak.count()` の実装 | 欲しい |
-| `context_builder.py` | Supabaseから文脈を構築してLLMに渡す | 欲しい |
 | `functions/weather.py` | `weather.get()`（OpenWeatherMap） | 将来 |
 
 ---

@@ -13,6 +13,13 @@ struct MainTabView: View {
                     Text("ホーム")
                 }
 
+            ConciergeTab()
+                .environmentObject(authManager)
+                .tabItem {
+                    Image(systemName: "sparkles")
+                    Text("ダリー")
+                }
+
             NotificationsTab()
                 .environmentObject(dataService)
                 .tabItem {
@@ -36,6 +43,7 @@ struct MainTabView: View {
         }
         .tint(Color(hex: "4262FF"))
         .task {
+            dataService.userId = authManager.userId
             await dataService.fetchAll()
         }
     }

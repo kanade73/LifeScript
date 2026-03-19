@@ -8,6 +8,7 @@ from .calendar import calendar_add, calendar_read, calendar_suggest
 from .web import web_fetch
 from .widget import widget_show
 from .gmail import gmail_unread, gmail_search, gmail_summarize, gmail_send
+from .machine import machine_analyze, machine_suggest
 
 # DSL内で使える関数名 → 実際のPython関数のマッピング
 FUNCTION_MAP: dict[str, callable] = {
@@ -21,6 +22,8 @@ FUNCTION_MAP: dict[str, callable] = {
     "gmail_search": gmail_search,
     "gmail_summarize": gmail_summarize,
     "gmail_send": gmail_send,
+    "machine_analyze": machine_analyze,
+    "machine_suggest": machine_suggest,
 }
 
 # バリデータ用: 許可される関数名の集合
@@ -77,5 +80,15 @@ FUNCTION_DESCRIPTIONS: list[dict[str, str]] = [
         "name": "gmail_send",
         "signature": 'gmail_send(to: str, subject: str, body: str) -> str',
         "description": "メールを送信する。Google認証が必要。",
+    },
+    {
+        "name": "machine_analyze",
+        "signature": "machine_analyze() -> list[dict]",
+        "description": "コンテキスト分析を実行。カレンダー・メール・traitsを分析し、提案をmachine_logsに自動生成する。戻り値は生成された提案のリスト。",
+    },
+    {
+        "name": "machine_suggest",
+        "signature": 'machine_suggest(message: str, reason: str = "")',
+        "description": "ダリーの提案をmachine_logsに直接書き込む。ホーム画面の提案セクションに通知として表示される。reasonで理由を付与できる。",
     },
 ]

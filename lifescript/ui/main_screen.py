@@ -211,6 +211,17 @@ when streak.count("運動") >= 7:
   calendar.suggest("ご褒美デー", on="next_free_day")
 """,
     },
+    {
+        "icon": ft.Icons.AUTO_AWESOME_ROUNDED,
+        "color": "#FFD02F",
+        "title": "毎朝ダリーが生活を分析",
+        "desc": "カレンダー・メール・traitsをAIが分析して、提案を自動生成します",
+        "dsl": """\
+# 毎朝ダリーが生活文脈を分析して提案
+when morning:
+  machine.analyze()
+""",
+    },
 ]
 
 _BORDER = "#E8E4DC"
@@ -1096,6 +1107,21 @@ class EditorView:
         self._active_tab.dsl_text = self._editor.value
         self._dsl_highlight_text.spans = _highlight_dsl(self._editor.value)
         self._template_gallery.visible = False
+        self._page.update()
+
+    def prefill_dsl(self, dsl_code: str, tab_name: str = "") -> None:
+        """外部から新規タブにDSLコードを挿入する（提案→IDE遷移用）。"""
+        self._active_tab.dsl_text = self._editor.value or ""
+        tab = _Tab(name=tab_name or "suggestion.ls", dsl_text=dsl_code)
+        self._tabs.append(tab)
+        self._active_tab = tab
+        self._editor.value = dsl_code
+        self._prev_editor_value = dsl_code
+        self._dsl_highlight_text.spans = _highlight_dsl(dsl_code)
+        self._template_gallery.visible = False
+        self._set_preview("# コンパイルしてください")
+        self._rebuild_tab_bar()
+        self._log("提案から LifeScript を生成しました", COLORS["green"])
         self._page.update()
 
     def _show_reference(self, e: ft.ControlEvent) -> None:

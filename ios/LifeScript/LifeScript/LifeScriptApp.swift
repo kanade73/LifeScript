@@ -6,13 +6,24 @@ struct LifeScriptApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if authManager.isLoggedIn {
-                MainTabView()
-                    .environmentObject(authManager)
-            } else {
-                LoginView()
-                    .environmentObject(authManager)
+            Group {
+                if authManager.isLoggedIn {
+                    if authManager.needsOnboarding {
+                        OnboardingView {
+                            authManager.completeOnboarding()
+                        }
+                        .environmentObject(authManager)
+                    } else {
+                        MainTabView()
+                            .environmentObject(authManager)
+                    }
+                } else {
+                    LoginView()
+                        .environmentObject(authManager)
+                }
             }
+            .animation(.easeInOut(duration: 0.3), value: authManager.isLoggedIn)
+            .animation(.easeInOut(duration: 0.3), value: authManager.needsOnboarding)
         }
     }
 }

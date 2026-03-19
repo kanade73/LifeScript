@@ -148,15 +148,18 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             page.add(onboarding)
             page.update()
 
+        # 共有参照（_show_main_app 内で設定される）
+        _home_ref: list = [None]
+
         def _on_onboarding_complete() -> None:
             page.controls.clear()
-            _show_main_app()
+            _show_main_app(run_initial_analysis=True)
             page.update()
 
         # ==============================================================
         # Phase 3: メインアプリ
         # ==============================================================
-        def _show_main_app() -> None:
+        def _show_main_app(run_initial_analysis: bool = False) -> None:
             page.bgcolor = BG
 
             from .home_view import HomeView
@@ -177,10 +180,22 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             def _ask_darii(message: str) -> None:
                 concierge_view.send_prefilled(message)
 
+            editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
+
+            def _open_ide_with_dsl(dsl_code: str) -> None:
+                """提案承認時: IDE に遷移して LifeScript を挿入する。"""
+                _on_nav(1)  # IDE 画面に遷移
+                import threading
+                def _delayed():
+                    import time
+                    time.sleep(0.2)
+                    editor_view.prefill_dsl(dsl_code)
+                threading.Thread(target=_delayed, daemon=True).start()
+
             home_view = HomeView(page=page, scheduler=scheduler,
                                 on_navigate=lambda idx: _on_nav(idx),
-                                on_ask_darii=_ask_darii)
-            editor_view = EditorView(page=page, compiler=compiler, scheduler=scheduler)
+                                on_ask_darii=_ask_darii,
+                                on_open_ide=_open_ide_with_dsl)
             dashboard_view = DashboardView(page=page, scheduler=scheduler)
             reference_view = ReferenceView(page=page)
             settings_view = SettingsView(page=page)
@@ -363,6 +378,43 @@ def create_app(compiler: Compiler, scheduler: LifeScriptScheduler):
             t = threading.Timer(1.0, _poll)
             t.daemon = True
             t.start()
+
+            # 共有参照を設定
+            _home_ref[0] = home_view
+
+            # ── 自動分析 ──────────────────────────────────────
+            def _run_auto_analysis():
+                try:
+                    home_view._analyzing = True
+                    home_view._refresh_content()
+                    from ..context_analyzer import ContextAnalyzer
+                    analyzer = ContextAnalyzer()
+                    analyzer._last_run = None
+                    analyzer.analyze()
+                    log_queue.log("System", "自動分析が完了しました")
+                except Exception as e:
+                    log_queue.log("System", f"分析エラー: {e}", "ERROR")
+                finally:
+                    home_view._analyzing = False
+                    home_view._refresh_content()
+
+            if run_initial_analysis:
+                # オンボーディング直後: 即座に分析
+                threading.Thread(target=_run_auto_analysis, daemon=True).start()
+            else:
+                # 既存ユーザー: 最近の提案がなければ分析
+                def _check_and_analyze():
+                    try:
+                        logs = db_client.get_machine_logs(limit=20)
+                        has_recent = any(
+                            l.get("action_type") in ("calendar_suggest", "general_suggest")
+                            for l in logs
+                        )
+                        if not has_recent:
+                            _run_auto_analysis()
+                    except Exception:
+                        pass
+                threading.Thread(target=_check_and_analyze, daemon=True).start()
 
         # ── Window close ─────────────────────────────────────
         def on_window_event(e: ft.WindowEvent) -> None:
