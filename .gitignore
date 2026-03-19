@@ -60,3 +60,4 @@ supabase_rls_policies.sql
 
 # Claude Code project memory
 .claude/
+google_credentials.json

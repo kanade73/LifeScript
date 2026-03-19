@@ -11,12 +11,14 @@
 from __future__ import annotations
 
 import calendar as cal_mod
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 
 import flet as ft
 
 from ..database.client import db_client
+from ..holidays import get_month_holidays
 from ..scheduler.scheduler import LifeScriptScheduler
 from ..traits import gather_all_traits
 from .app import (
@@ -519,6 +521,13 @@ class HomeView:
         year = self._cal_year
         month = self._cal_month
         today = datetime.now()
+        holidays_by_day: dict[int, str] = {}
+        try:
+            model = os.getenv("LIFESCRIPT_MODEL", "gemini/gemini-2.5-flash")
+            month_holidays = get_month_holidays(year, month, model=model)
+            holidays_by_day = {d.day: name for d, name in month_holidays.items()}
+        except Exception:
+            holidays_by_day = {}
 
         # イベントを取得（日 → タイトルリストのマッピング）
         events_by_day: dict[int, list[str]] = {}
@@ -584,6 +593,7 @@ class HomeView:
                 else:
                     is_today = (day == today.day and month == today.month and year == today.year)
                     day_events = events_by_day.get(day, [])
+                    holiday_name = holidays_by_day.get(day, "")
 
                     # 日番号
                     day_label = ft.Text(
@@ -601,6 +611,18 @@ class HomeView:
 
                     # イベントラベル（最大2件）
                     ev_labels: list[ft.Control] = []
+                    if holiday_name:
+                        ev_labels.append(ft.Container(
+                            content=ft.Text(
+                                holiday_name[:6], size=9, color=CARD_BG,
+                                max_lines=1, overflow=ft.TextOverflow.CLIP,
+                                no_wrap=True,
+                            ),
+                            bgcolor=CORAL,
+                            border_radius=3,
+                            padding=ft.padding.symmetric(horizontal=3, vertical=1),
+                            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        ))
                     for i, title in enumerate(day_events[:2]):
                         clr = _ev_colors[i % len(_ev_colors)]
                         ev_labels.append(ft.Container(
@@ -954,6 +976,88 @@ class HomeView:
                 time.sleep(0.3)
                 self._on_ask_darii(message)
             threading.Thread(target=_send_delayed, daemon=True).start()
+
+    # ==================================================================
+    # Widget: Gmail
+    # ==================================================================
+    def _widget_gmail(self) -> ft.Container | None:
+        """Google認証済みの場合のみGmailウィジェットを表示する。"""
+        from ..google_auth import is_authenticated, get_user_email
+
+        if not is_authenticated():
+            return None
+
+        email = get_user_email() or "Gmail"
+
+        # 未読メール取得（UIスレッドなので軽量に）
+        items: list[ft.Control] = []
+        try:
+            from ..google_auth import get_credentials
+            creds = get_credentials()
+            if creds:
+                from googleapiclient.discovery import build
+                service = build("gmail", "v1", credentials=creds)
+                results = service.users().messages().list(
+                    userId="me", q="is:unread", maxResults=5,
+                ).execute()
+                messages = results.get("messages", [])
+                unread_count = results.get("resultSizeEstimate", 0)
+
+                items.append(ft.Row([
+                    ft.Icon(ft.Icons.MARK_EMAIL_UNREAD_ROUNDED, size=14, color="#EA4335"),
+                    ft.Text(f"未読 {unread_count}件", size=12,
+                            weight=ft.FontWeight.W_600, color=DARK_TEXT),
+                ], spacing=6))
+
+                for m in messages[:3]:
+                    msg = service.users().messages().get(
+                        userId="me", id=m["id"], format="metadata",
+                        metadataHeaders=["Subject", "From"],
+                    ).execute()
+                    headers = {h["name"].lower(): h["value"]
+                               for h in msg.get("payload", {}).get("headers", [])}
+                    subject = headers.get("subject", "(件名なし)")
+                    sender = headers.get("from", "")
+                    # 差出人名だけ抽出
+                    if "<" in sender:
+                        sender = sender.split("<")[0].strip().strip('"')
+                    items.append(ft.Container(
+                        content=ft.Row([
+                            ft.Container(width=4, height=28, bgcolor="#EA4335", border_radius=2),
+                            ft.Column([
+                                ft.Text(subject, size=13, weight=ft.FontWeight.W_500,
+                                        color=DARK_TEXT, max_lines=1,
+                                        overflow=ft.TextOverflow.ELLIPSIS),
+                                ft.Text(sender, size=11, color=LIGHT_TEXT,
+                                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                            ], spacing=0, expand=True),
+                        ], spacing=8),
+                        padding=ft.padding.symmetric(vertical=2),
+                    ))
+                if not messages:
+                    items.append(ft.Text("未読メールはありません",
+                                         size=13, color=LIGHT_TEXT, italic=True))
+        except Exception:
+            items.append(ft.Text("メール取得に失敗しました",
+                                 size=12, color=CORAL, italic=True))
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.MAIL_ROUNDED, size=20, color="#EA4335"),
+                    ft.Text("Gmail", size=16, weight=ft.FontWeight.W_700, color=DARK_TEXT),
+                    ft.Container(expand=True),
+                    ft.Text(email.split("@")[0] if email else "",
+                            size=11, color=LIGHT_TEXT),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Divider(height=1, color=_BORDER),
+                *items,
+            ], spacing=6),
+            bgcolor=CARD_BG,
+            border_radius=16,
+            padding=14,
+            border=ft.border.all(1, _BORDER),
+        )
 
     # ==================================================================
     # Widget: Gmail
