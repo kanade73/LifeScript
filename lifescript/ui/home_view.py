@@ -582,7 +582,12 @@ class HomeView:
         cell_w = 1 / 7  # 均等割
         wk = ft.Row(
             [ft.Container(
-                content=ft.Text(d, size=12, color=LIGHT_TEXT, text_align=ft.TextAlign.CENTER),
+                content=ft.Text(
+                    d,
+                    size=12,
+                    color=CORAL if d == "日" else (BLUE if d == "土" else LIGHT_TEXT),
+                    text_align=ft.TextAlign.CENTER,
+                ),
                 expand=True, alignment=ft.Alignment(0, 0),
             ) for d in ["日", "月", "火", "水", "木", "金", "土"]],
             spacing=2,
