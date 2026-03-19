@@ -531,6 +531,7 @@ class HomeView:
 
         # イベントを取得（日 → タイトルリストのマッピング）
         events_by_day: dict[int, list[str]] = {}
+        events_by_day_full: dict[int, list[dict]] = {}
         month_events: list[dict] = []
         try:
             first = datetime(year, month, 1, tzinfo=_JST)
@@ -544,6 +545,7 @@ class HomeView:
                     d = datetime.fromisoformat(ev["start_at"].replace("Z", "+00:00"))
                     if d.year == year and d.month == month:
                         events_by_day.setdefault(d.day, []).append(ev.get("title", ""))
+                        events_by_day_full.setdefault(d.day, []).append(ev)
                 except (ValueError, KeyError):
                     pass
         except Exception:
@@ -640,6 +642,7 @@ class HomeView:
                             f"+{len(day_events) - 2}", size=9, color=LIGHT_TEXT,
                         ))
 
+                    day_full_events = events_by_day_full.get(day, [])
                     cells.append(ft.Container(
                         content=ft.Column(
                             [day_badge, *ev_labels],
@@ -651,6 +654,8 @@ class HomeView:
                         border_radius=8,
                         padding=ft.padding.only(left=3, top=2, right=2, bottom=2),
                         border=ft.border.all(1, f"{BLUE}30" if is_today else "#F0EDE6"),
+                        on_click=lambda e, d=day, evs=day_full_events: self._show_day_dialog(year, month, d, evs),
+                        ink=True,
                     ))
             rows.append(ft.Row(cells, spacing=2))
 
@@ -840,7 +845,7 @@ class HomeView:
         try:
             logs = db_client.get_machine_logs(limit=20)
             for entry in logs:
-                if entry.get("action_type") != "calendar_suggest":
+                if entry.get("action_type") not in ("calendar_suggest", "general_suggest"):
                     continue
                 suggestion_entries.append(entry)
                 if len(suggestion_entries) >= 3:
@@ -1294,6 +1299,290 @@ class HomeView:
             widgets.append(widget)
 
         return widgets
+
+    # ==================================================================
+    # カレンダー日付タップ → 日別イベントダイアログ
+    # ==================================================================
+    _WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
+
+    def _show_day_dialog(self, year: int, month: int, day: int,
+                         day_events: list[dict]) -> None:
+        """指定日のイベント一覧ダイアログを表示する。"""
+        import calendar as _cal
+
+        wdidx = _cal.weekday(year, month, day)
+        header_text = f"{month}月{day}日（{self._WEEKDAY_JP[wdidx]}）"
+
+        # --- イベント行を構築 ---
+        _ev_colors = [BLUE, PURPLE, GREEN, ORANGE, CORAL]
+        event_rows: list[ft.Control] = []
+        for i, ev in enumerate(day_events):
+            ev_id = ev.get("id")
+            ev_title = ev.get("title", "")
+            source = ev.get("source", "user")
+            start_raw = ev.get("start_at", "")
+            try:
+                dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+                time_str = dt.strftime("%H:%M")
+            except (ValueError, AttributeError):
+                time_str = start_raw[11:16] if len(start_raw) > 15 else "--:--"
+
+            accent = _ev_colors[i % len(_ev_colors)]
+            source_label = "ダリー" if source == "machine" else "手動"
+            source_bg = PURPLE if source == "machine" else MID_TEXT
+
+            row = ft.Container(
+                content=ft.Row([
+                    ft.Container(width=4, height=40, bgcolor=accent, border_radius=2),
+                    ft.Column([
+                        ft.Row([
+                            ft.Text(time_str, size=12, color=LIGHT_TEXT,
+                                    weight=ft.FontWeight.W_600),
+                            ft.Container(
+                                content=ft.Text(source_label, size=9, color=CARD_BG),
+                                bgcolor=source_bg, border_radius=4,
+                                padding=ft.padding.symmetric(horizontal=5, vertical=1),
+                            ),
+                        ], spacing=6),
+                        ft.Text(ev_title, size=14, weight=ft.FontWeight.W_600,
+                                color=DARK_TEXT, max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS),
+                    ], spacing=2, expand=True),
+                    ft.IconButton(
+                        ft.Icons.EDIT_ROUNDED, icon_size=16, icon_color=BLUE,
+                        style=ft.ButtonStyle(padding=4),
+                        tooltip="編集",
+                        on_click=lambda e, evt=ev: self._day_edit_event(
+                            evt, year, month, day, dialog),
+                    ),
+                    ft.IconButton(
+                        ft.Icons.DELETE_OUTLINE_ROUNDED, icon_size=16, icon_color=CORAL,
+                        style=ft.ButtonStyle(padding=4),
+                        tooltip="削除",
+                        on_click=lambda e, eid=ev_id: self._day_delete_event(
+                            eid, dialog),
+                    ),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(vertical=4, horizontal=4),
+                border=ft.border.all(1, _BORDER),
+                border_radius=10,
+            )
+            event_rows.append(row)
+
+        if not event_rows:
+            event_rows.append(ft.Container(
+                content=ft.Text("予定なし", size=14, color=LIGHT_TEXT, italic=True),
+                padding=ft.padding.symmetric(vertical=12),
+                alignment=ft.Alignment(0, 0),
+            ))
+
+        def _close(e=None):
+            dialog.open = False
+            self._page.update()
+
+        def _add(e):
+            dialog.open = False
+            self._page.update()
+            self._day_add_event(year, month, day)
+
+        content = ft.Column(
+            [*event_rows],
+            tight=True, spacing=6, scroll=ft.ScrollMode.AUTO,
+        )
+
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.Icons.CALENDAR_TODAY_ROUNDED, size=20, color=BLUE),
+                ft.Text(header_text, size=18, weight=ft.FontWeight.W_700,
+                        color=DARK_TEXT),
+            ], spacing=8),
+            content=ft.Container(content=content, width=340),
+            actions=[
+                ft.ElevatedButton(
+                    "予定を追加", icon=ft.Icons.ADD_ROUNDED,
+                    bgcolor=BLUE, color=CARD_BG,
+                    on_click=_add,
+                ),
+                ft.TextButton("閉じる", on_click=_close),
+            ],
+        )
+        self._page.overlay.append(dialog)
+        dialog.open = True
+        self._page.update()
+
+    def _day_delete_event(self, event_id: int, parent_dialog: ft.AlertDialog) -> None:
+        """日別ダイアログからイベントを削除（確認付き）。"""
+
+        def _confirm_delete(e):
+            confirm_dlg.open = False
+            self._page.update()
+            try:
+                db_client.delete_event(event_id)
+            except Exception:
+                pass
+            parent_dialog.open = False
+            self._page.update()
+            self._refresh_content()
+
+        def _cancel(e):
+            confirm_dlg.open = False
+            self._page.update()
+
+        confirm_dlg = ft.AlertDialog(
+            title=ft.Text("削除確認", size=16, weight=ft.FontWeight.W_600, color=DARK_TEXT),
+            content=ft.Text("この予定を削除しますか？", size=14, color=MID_TEXT),
+            actions=[
+                ft.TextButton("キャンセル", on_click=_cancel),
+                ft.ElevatedButton("削除", bgcolor=CORAL, color=CARD_BG,
+                                  on_click=_confirm_delete),
+            ],
+        )
+        self._page.overlay.append(confirm_dlg)
+        confirm_dlg.open = True
+        self._page.update()
+
+    def _day_edit_event(self, event: dict, year: int, month: int, day: int,
+                        parent_dialog: ft.AlertDialog) -> None:
+        """日別ダイアログからイベントを編集。"""
+        title_field = ft.TextField(
+            label="タイトル", value=event.get("title", ""),
+            autofocus=True, text_size=14,
+        )
+        start_raw = event.get("start_at", "")
+        try:
+            dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+            date_val = dt.strftime("%Y-%m-%d")
+            time_val = dt.strftime("%H:%M")
+        except (ValueError, AttributeError):
+            date_val = f"{year:04d}-{month:02d}-{day:02d}"
+            time_val = start_raw[11:16] if len(start_raw) > 15 else "09:00"
+
+        date_field = ft.TextField(
+            label="日付 (YYYY-MM-DD)", value=date_val,
+            hint_text="YYYY-MM-DD", text_size=14,
+        )
+        time_field = ft.TextField(
+            label="時刻 (HH:MM)", value=time_val,
+            hint_text="HH:MM", text_size=14,
+        )
+
+        def _save(e):
+            text = title_field.value.strip()
+            if not text:
+                return
+            d_str = date_field.value.strip()
+            t_str = time_field.value.strip()
+            if not d_str:
+                date_field.error_text = "日付を入力してください"
+                self._page.update()
+                return
+            if not t_str:
+                time_field.error_text = "時刻を入力してください"
+                self._page.update()
+                return
+            try:
+                new_dt = datetime.strptime(f"{d_str} {t_str}", "%Y-%m-%d %H:%M")
+                new_dt = new_dt.replace(tzinfo=_JST)
+            except ValueError:
+                date_field.error_text = "形式: YYYY-MM-DD"
+                time_field.error_text = "形式: HH:MM"
+                self._page.update()
+                return
+            try:
+                db_client.update_event(
+                    event["id"], title=text, start_at=new_dt.isoformat(),
+                )
+            except Exception:
+                pass
+            edit_dlg.open = False
+            parent_dialog.open = False
+            self._page.update()
+            self._refresh_content()
+
+        def _cancel(e):
+            edit_dlg.open = False
+            self._page.update()
+
+        edit_dlg = ft.AlertDialog(
+            title=ft.Text("イベント編集", size=18, weight=ft.FontWeight.W_600,
+                          color=DARK_TEXT),
+            content=ft.Column([title_field, date_field, time_field],
+                              tight=True, spacing=12),
+            actions=[
+                ft.TextButton("キャンセル", on_click=_cancel),
+                ft.ElevatedButton("保存", bgcolor=BLUE, color=CARD_BG, on_click=_save),
+            ],
+        )
+        self._page.overlay.append(edit_dlg)
+        edit_dlg.open = True
+        self._page.update()
+
+    def _day_add_event(self, year: int, month: int, day: int) -> None:
+        """日別ダイアログから新規イベントを追加。"""
+        title_field = ft.TextField(
+            label="タイトル", autofocus=True, text_size=14,
+        )
+        date_val = f"{year:04d}-{month:02d}-{day:02d}"
+        date_field = ft.TextField(
+            label="日付 (YYYY-MM-DD)", value=date_val,
+            hint_text="YYYY-MM-DD", text_size=14,
+        )
+        time_field = ft.TextField(
+            label="時刻 (HH:MM)", value="09:00",
+            hint_text="HH:MM", text_size=14,
+        )
+
+        def _save(e):
+            text = title_field.value.strip()
+            if not text:
+                title_field.error_text = "タイトルを入力してください"
+                self._page.update()
+                return
+            d_str = date_field.value.strip()
+            t_str = time_field.value.strip()
+            if not d_str:
+                date_field.error_text = "日付を入力してください"
+                self._page.update()
+                return
+            if not t_str:
+                time_field.error_text = "時刻を入力してください"
+                self._page.update()
+                return
+            try:
+                new_dt = datetime.strptime(f"{d_str} {t_str}", "%Y-%m-%d %H:%M")
+                new_dt = new_dt.replace(tzinfo=_JST)
+            except ValueError:
+                date_field.error_text = "形式: YYYY-MM-DD"
+                time_field.error_text = "形式: HH:MM"
+                self._page.update()
+                return
+            try:
+                db_client.add_event(
+                    title=text, start_at=new_dt.isoformat(), source="user",
+                )
+            except Exception:
+                pass
+            add_dlg.open = False
+            self._page.update()
+            self._refresh_content()
+
+        def _cancel(e):
+            add_dlg.open = False
+            self._page.update()
+
+        add_dlg = ft.AlertDialog(
+            title=ft.Text("予定を追加", size=18, weight=ft.FontWeight.W_600,
+                          color=DARK_TEXT),
+            content=ft.Column([title_field, date_field, time_field],
+                              tight=True, spacing=12),
+            actions=[
+                ft.TextButton("キャンセル", on_click=_cancel),
+                ft.ElevatedButton("追加", bgcolor=BLUE, color=CARD_BG, on_click=_save),
+            ],
+        )
+        self._page.overlay.append(add_dlg)
+        add_dlg.open = True
+        self._page.update()
 
     # ==================================================================
     # 詳細ダイアログ
