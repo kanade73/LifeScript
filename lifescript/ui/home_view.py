@@ -60,9 +60,9 @@ class HomeView:
         self._analyzing = False  # 分析中フラグ
         self._last_build_time = 0  # 最後にビルドした時刻（デバウンス用）
         self._pending_refresh = False  # リフレッシュ待機フラグ
-        # データキャッシュ（10秒間有効）
+        # データキャッシュ
         self._cache: dict[str, tuple[float, any]] = {}
-        self._cache_ttl = 5.0  # キャッシュ有効期間（秒）
+        self._cache_ttl = 5.0  # 既定のキャッシュ有効期間（秒）
         self._notify_overlay_visible = False
         self._notify_overlay_message = ""
         self._notify_overlay_time = ""
@@ -106,7 +106,7 @@ class HomeView:
             self._pending_refresh = False
             self._refresh_content()
     
-    def _get_cached(self, key: str, fetch_func: callable) -> any:
+    def _get_cached(self, key: str, fetch_func: callable, ttl: float | None = None) -> any:
         """キャッシュから取得、期限切れなら再取得。
         
         Args:
@@ -119,15 +119,60 @@ class HomeView:
         import time
         current_time = time.time()
         
+        effective_ttl = self._cache_ttl if ttl is None else ttl
+
         if key in self._cache:
             cached_time, cached_value = self._cache[key]
-            if current_time - cached_time < self._cache_ttl:
+            if current_time - cached_time < effective_ttl:
                 return cached_value
         
         # キャッシュミスまたは期限切れ → 新規取得
         value = fetch_func()
         self._cache[key] = (current_time, value)
         return value
+
+    def _invalidate_cache(self, prefix: str | None = None) -> None:
+        """キャッシュを破棄する。prefix 指定時は一致キーのみ削除。"""
+        if prefix is None:
+            self._cache.clear()
+            return
+
+        for key in list(self._cache.keys()):
+            if key.startswith(prefix):
+                self._cache.pop(key, None)
+
+    def _get_machine_logs_cached(self, limit: int = 30, ttl: float = 3.0) -> list[dict]:
+        """machine_logs をまとめて取得し、limit 分だけ返す。"""
+        base_limit = max(100, limit)
+
+        def _fetch() -> list[dict]:
+            try:
+                return db_client.get_machine_logs(limit=base_limit)
+            except Exception:
+                return []
+
+        logs = self._get_cached(f"machine_logs:{base_limit}", _fetch, ttl=ttl)
+        return logs[:limit]
+
+    def _get_events_cached(self, start_from: str, start_to: str, ttl: float = 5.0) -> list[dict]:
+        """期間指定イベントをキャッシュ付きで取得。"""
+
+        def _fetch() -> list[dict]:
+            try:
+                return db_client.get_events(start_from=start_from, start_to=start_to)
+            except Exception:
+                return []
+
+        key = f"events:{start_from}:{start_to}"
+        return self._get_cached(key, _fetch, ttl=ttl)
+
+    def _get_active_count_cached(self, ttl: float = 2.0) -> int:
+        """稼働中スクリプト数を短時間キャッシュ。"""
+        return self._get_cached(
+            "scheduler:active_count",
+            lambda: len(self._scheduler.get_active_ids()),
+            ttl=ttl,
+        )
 
     def _build_notify_overlay(self) -> ft.Container:
         is_scheduled = self._notify_overlay_action_type == "notify_scheduled"
@@ -396,7 +441,7 @@ class HomeView:
             greeting_icon = ft.Icons.NIGHTS_STAY_ROUNDED
             greeting_color = BLUE
 
-        active_count = len(self._scheduler.get_active_ids())
+        active_count = self._get_active_count_cached()
 
         # ── ダリーの一言 ──────────────────────────────────────
         darii_message = self._get_darii_message(hour, active_count)
@@ -637,12 +682,12 @@ class HomeView:
         """時間帯・状況に応じたダリーの一言を返す。"""
         import random
         try:
-            logs = db_client.get_machine_logs(limit=30)
+            logs = self._get_machine_logs_cached(limit=30)
             suggestion_count = sum(
                 1 for l in logs
                 if l.get("action_type") in ("calendar_suggest", "general_suggest")
             )
-            today_events = len(db_client.get_events(
+            today_events = len(self._get_events_cached(
                 start_from=datetime.now(_JST).replace(hour=0, minute=0, second=0).isoformat(),
                 start_to=datetime.now(_JST).replace(hour=23, minute=59, second=59).isoformat(),
             ))
@@ -714,7 +759,7 @@ class HomeView:
 
             # マシンの観察 + 手動メモリ
             try:
-                logs = db_client.get_machine_logs(limit=100)
+                logs = self._get_machine_logs_cached(limit=100)
                 memories = [l for l in logs if l.get("action_type") == "memory"]
                 auto_memories = [l for l in logs if l.get("action_type") == "memory_auto"]
             except Exception:
@@ -821,6 +866,7 @@ class HomeView:
                 return
             db_client.add_machine_log(action_type="memory", content=val)
             dlg.open = False
+            self._invalidate_cache()
             _refresh()
 
         def _edit(log_id: int, current: str) -> None:
@@ -851,10 +897,12 @@ class HomeView:
             db_client.delete_machine_log(log_id)
             db_client.add_machine_log(action_type="memory", content=val)
             dlg.open = False
+            self._invalidate_cache()
             _refresh()
 
         def _delete(log_id: int) -> None:
             db_client.delete_machine_log(log_id)
+            self._invalidate_cache()
             _refresh()
 
         def _close_sub(dlg: ft.AlertDialog) -> None:
@@ -960,7 +1008,11 @@ class HomeView:
         holidays_by_day: dict[int, str] = {}
         try:
             model = os.getenv("LIFESCRIPT_MODEL", "gemini/gemini-2.5-flash")
-            month_holidays = get_month_holidays(year, month, model=model)
+            month_holidays = self._get_cached(
+                f"holidays:{year}-{month}:{model}",
+                lambda: get_month_holidays(year, month, model=model),
+                ttl=3600.0,
+            )
             holidays_by_day = {d.day: name for d, name in month_holidays.items()}
         except Exception:
             holidays_by_day = {}
@@ -973,8 +1025,9 @@ class HomeView:
             first = datetime(year, month, 1, tzinfo=_JST)
             last = datetime(year + (1 if month == 12 else 0),
                             (1 if month == 12 else month + 1), 1, tzinfo=_JST)
-            month_events = db_client.get_events(
+            month_events = self._get_events_cached(
                 start_from=first.isoformat(), start_to=last.isoformat(),
+                ttl=10.0,
             )
             for ev in month_events:
                 try:
@@ -992,13 +1045,13 @@ class HomeView:
             self._cal_month = 12 if self._cal_month == 1 else self._cal_month - 1
             if self._cal_month == 12:
                 self._cal_year -= 1
-            self._page.update()
+            self._refresh_content()
 
         def _next(e: ft.ControlEvent) -> None:
             self._cal_month = 1 if self._cal_month == 12 else self._cal_month + 1
             if self._cal_month == 1:
                 self._cal_year += 1
-            self._page.update()
+            self._refresh_content()
 
         nav = ft.Row([
             ft.IconButton(ft.Icons.CHEVRON_LEFT, icon_size=18, on_click=_prev,
@@ -1129,8 +1182,9 @@ class HomeView:
 
         # ── 直近のイベント ──
         try:
-            events = db_client.get_events(
+            events = self._get_events_cached(
                 start_from=today_start.isoformat(), start_to=end_3days.isoformat(),
+                ttl=5.0,
             )
             for ev in events[:6]:
                 start = ev.get("start_at", "")
@@ -1172,7 +1226,7 @@ class HomeView:
 
         # ── リマインダー ──
         try:
-            logs = db_client.get_machine_logs(limit=30)
+            logs = self._get_machine_logs_cached(limit=30)
             for entry in logs:
                 if entry.get("action_type") != "reminder":
                     continue
@@ -1324,13 +1378,14 @@ class HomeView:
         week_end = week_start + timedelta(days=7)
         event_count = 0
         try:
-            events = db_client.get_events(
+            events = self._get_events_cached(
                 start_from=week_start.isoformat(), start_to=week_end.isoformat(),
+                ttl=10.0,
             )
             event_count = len(events)
         except Exception:
             pass
-        active_count = len(self._scheduler.get_active_ids())
+        active_count = self._get_active_count_cached()
 
         # ── 選択状態の管理 ──
         selected_entry: list[dict | None] = [None]
@@ -1369,7 +1424,7 @@ class HomeView:
         suggestion_cards: list[ft.Container] = []
         suggestion_entries: list[dict] = []
         try:
-            logs = db_client.get_machine_logs(limit=20)
+            logs = self._get_machine_logs_cached(limit=20)
             for entry in logs:
                 if entry.get("action_type") not in ("calendar_suggest", "general_suggest"):
                     continue
@@ -1504,7 +1559,7 @@ class HomeView:
         # ── ダリーの観察（パターン認識結果） ──
         observation_items: list[ft.Control] = []
         try:
-            all_logs = db_client.get_machine_logs(limit=100)
+            all_logs = self._get_machine_logs_cached(limit=100)
             auto_mems = [l for l in all_logs if l.get("action_type") == "memory_auto"]
             for mem in auto_mems[:3]:
                 obs_text = mem.get("content", "").strip()
@@ -1616,19 +1671,32 @@ class HomeView:
 
         email = get_user_email() or "Gmail"
 
-        # 未読メール取得（UIスレッドなので軽量に）
+        # 未読メール取得（外部APIなので短時間キャッシュ）
         items: list[ft.Control] = []
         try:
-            from ..google_auth import get_credentials
-            creds = get_credentials()
-            if creds:
+            def _fetch_gmail_snapshot() -> dict:
+                from ..google_auth import get_credentials
+                creds = get_credentials()
+                if not creds:
+                    return {"unread_count": 0, "messages": []}
+
                 from googleapiclient.discovery import build
                 service = build("gmail", "v1", credentials=creds)
                 results = service.users().messages().list(
                     userId="me", q="is:unread", maxResults=5,
                 ).execute()
-                messages = results.get("messages", [])
-                unread_count = results.get("resultSizeEstimate", 0)
+                return {
+                    "unread_count": results.get("resultSizeEstimate", 0),
+                    "messages": results.get("messages", []),
+                    "service": service,
+                }
+
+            snapshot = self._get_cached("gmail:unread", _fetch_gmail_snapshot, ttl=45.0)
+            unread_count = snapshot.get("unread_count", 0)
+            messages = snapshot.get("messages", [])
+            service = snapshot.get("service")
+
+            if service:
 
                 items.append(ft.Row([
                     ft.Icon(ft.Icons.MARK_EMAIL_UNREAD_ROUNDED, size=14, color="#EA4335"),
@@ -1762,7 +1830,7 @@ class HomeView:
     def _get_notification_entries(self, limit: int = 30) -> list[dict]:
         entries: list[dict] = []
         try:
-            logs = db_client.get_machine_logs(limit=limit)
+            logs = self._get_machine_logs_cached(limit=max(limit, 30))
             for entry in logs:
                 if entry.get("action_type") in ("notify", "notify_scheduled"):
                     entries.append(entry)
@@ -1934,7 +2002,7 @@ class HomeView:
         seen_names: dict[str, dict] = {}
 
         try:
-            logs = db_client.get_machine_logs(limit=100)
+            logs = self._get_machine_logs_cached(limit=100)
             for entry in logs:
                 at = entry.get("action_type", "")
                 if not at.startswith("widget:"):
@@ -2134,6 +2202,7 @@ class HomeView:
             except Exception:
                 pass
             parent_dialog.open = False
+            self._invalidate_cache()
             self._page.update()
             self._refresh_content()
 
@@ -2209,6 +2278,7 @@ class HomeView:
                 pass
             edit_dlg.open = False
             parent_dialog.open = False
+            self._invalidate_cache()
             self._page.update()
             self._refresh_content()
 
@@ -2276,6 +2346,7 @@ class HomeView:
             except Exception:
                 pass
             add_dlg.open = False
+            self._invalidate_cache()
             self._page.update()
             self._refresh_content()
 
@@ -2375,6 +2446,8 @@ class HomeView:
             db_client.delete_event(event_id)
         except Exception:
             pass
+        self._invalidate_cache()
+        self._refresh_content()
         self._page.update()
 
     def _delete_log(self, log_id: int) -> None:
@@ -2382,6 +2455,8 @@ class HomeView:
             db_client.delete_machine_log(log_id)
         except Exception:
             pass
+        self._invalidate_cache()
+        self._refresh_content()
         self._page.update()
 
     # ==================================================================
@@ -2429,6 +2504,8 @@ class HomeView:
                 note=note_field.value.strip(),
             )
             dialog.open = False
+            self._invalidate_cache()
+            self._refresh_content()
             self._page.update()
 
         dialog = ft.AlertDialog(
@@ -2500,6 +2577,7 @@ class HomeView:
                 db_client.delete_machine_log(log_id)
             except Exception:
                 pass
+            self._invalidate_cache()
 
         # IDE に遷移して DSL を挿入
         if self._on_open_ide:
@@ -2671,6 +2749,8 @@ LifeScript DSL のコードのみを出力してください。
                 )
 
             dialog.open = False
+            self._invalidate_cache()
+            self._refresh_content()
             self._page.update()
 
         dialog = ft.AlertDialog(
